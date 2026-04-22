@@ -1,0 +1,463 @@
+{% extends 'base.html' %}
+{% block title %}IV Monitoring Dashboard{% endblock %}
+{% block content %}
+<div class="dashboard-shell" id="dashboardRoot" data-selected-patient-id="{{ selected_patient.id }}">
+    <div class="container-fluid px-3 px-lg-4 py-3">
+        <div class="topbar mb-4">
+            <div>
+                <div class="small text-uppercase text-secondary fw-semibold brand-line"><span class="brand-dot"></span><span data-i18n="systemName">IV Bag Monitoring System</span></div>
+                <h2 class="mb-0" data-i18n="dashboard">Dashboard</h2>
+                <div class="text-secondary mt-1">
+                    <span data-i18n="monitoredBy">Monitored by</span>: <strong>{{ session.get('monitor_name') }}</strong>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <div class="clock-card">
+                    <div class="clock-item">
+                        <span class="clock-label" data-i18n="localTime">Local Time</span>
+                        <span id="localClock">--:--:--</span>
+                    </div>
+                </div>
+                <form method="post" action="{{ url_for('set_language', lang='ms' if active_language == 'en' else 'en') }}">
+                    <input type="hidden" name="next_url" value="{{ request.full_path }}">
+                    <button class="btn btn-outline-primary rounded-pill px-4" type="submit" data-i18n="languageButton">BM / EN</button>
+                </form>
+                <a class="btn btn-success rounded-pill px-4" href="{{ url_for('export_excel') }}">
+                    <i class="bi bi-file-earmark-excel me-2"></i><span data-i18n="exportExcel">Export Excel</span>
+                </a>
+                <a class="btn btn-outline-danger rounded-pill px-4" href="{{ url_for('logout') }}">
+                    <i class="bi bi-box-arrow-right me-2"></i><span data-i18n="logout">Logout</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-xl-3">
+                <div class="dashboard-card h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0" data-i18n="patientList">Patient List</h5>
+                        <span class="badge-soft">5</span>
+                    </div>
+                    <p class="text-secondary small" data-i18n="clickPatient">Click a patient card to view details.</p>
+                    <div class="patient-list" id="patientList">
+                        {% for patient in patients %}
+                        <a href="{{ url_for('dashboard', patient_id=patient.id) }}" class="patient-card-link {% if selected_patient.id == patient.id %}active{% endif %}">
+                            <div class="patient-mini-card">
+                                <div class="patient-id-badge">{{ patient.id }}</div>
+                                <div class="patient-mini-content">
+                                    <div class="patient-mini-top">
+                                        <h6 class="mb-0">{{ patient.patient_name }}</h6>
+                                        <span class="status-pill status-{{ patient.current_status|lower }}" data-status-key="{{ patient.current_status|lower }}">{{ patient.current_status }}</span>
+                                    </div>
+                                    <div class="small text-secondary">{{ patient.bed_number }}</div>
+                                    <div class="small text-secondary">{{ patient.current_weight_g }} g · {{ patient.current_level_percent }}%</div>
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-9">
+                <div class="row g-4">
+                    <div class="col-12">
+                        <div class="dashboard-card detail-card">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+                                <div>
+                                    <div class="small text-uppercase text-secondary fw-semibold" data-i18n="patientDetails">Patient Details</div>
+                                    <h3 class="mb-1" id="selectedPatientName">{{ selected_patient.patient_name }}</h3>
+                                    <div class="text-secondary">
+                                        <span data-i18n="patientId">Patient ID</span>: <strong id="selectedPatientId">{{ selected_patient.id }}</strong>
+                                        &nbsp;|&nbsp;
+                                        <span data-i18n="bedNumber">Bed Number</span>: <strong id="selectedBedNumber">{{ selected_patient.bed_number }}</strong>
+                                    </div>
+                                </div>
+                                <div class="status-summary status-{{ selected_patient.current_status|lower }}" id="selectedStatusSummary">
+                                    <span id="selectedStatusText" data-status-key="{{ selected_patient.current_status|lower }}">{{ selected_patient.current_status }}</span>
+                                </div>
+                            </div>
+
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-3">
+                                    <div class="metric-card">
+                                        <div class="metric-label" data-i18n="currentWeight">Current IV Weight</div>
+                                        <div class="metric-value"><span id="selectedCurrentWeightValue">{{ selected_patient.current_weight_g }}</span> <span>g</span></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-card">
+                                        <div class="metric-label" data-i18n="ivLevel">IV Level (%)</div>
+                                        <div class="metric-value"><span id="selectedLevelValue">{{ selected_patient.current_level_percent }}</span><span>%</span></div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-card">
+                                        <div class="metric-label" data-i18n="status">Status</div>
+                                        <div class="metric-value small-status" id="selectedStatusMetric" data-status-key="{{ selected_patient.current_status|lower }}">{{ selected_patient.current_status }}</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-card">
+                                        <div class="metric-label" data-i18n="lastUpdate">Last Update Time</div>
+                                        <div class="metric-value smaller" id="selectedLastUpdate" title="{{ selected_patient.last_update_time.isoformat() }}">{{ selected_patient.last_update_time.astimezone().strftime('%d/%m/%Y %H:%M:%S') }}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row g-4">
+                                <div class="col-lg-8">
+                                    <div class="chart-card h-100">
+                                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                                            <h5 class="mb-0" data-i18n="trendGraph">Weight Trend Graph</h5>
+                                            <div class="d-flex gap-2 align-items-center flex-wrap">
+                                                <span class="badge-soft" data-i18n="realtimeClock">Real-Time Clock</span>
+                                                <span class="live-pill"><span class="live-dot"></span>Auto Refresh</span>
+                                                <button class="btn btn-sm btn-outline-primary rounded-pill" type="button" id="alertSoundToggle">Alert Sound: On</button>
+                                            </div>
+                                        </div>
+                                        <canvas id="weightChart"
+                                            data-labels='{{ chart_labels|tojson }}'
+                                            data-weights='{{ chart_weights|tojson }}'
+                                            data-levels='{{ chart_levels|tojson }}'></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-lg-4">
+                                    <div class="dashboard-card h-100">
+                                        <h5 class="mb-3" data-i18n="alerts">Alert Section</h5>
+                                        <div class="alerts-list" id="alertsList">
+                                            {% if alerts %}
+                                                {% for alert in alerts %}
+                                                <div class="alert-item {% if alert.alert_type == 'Critical' %}critical{% else %}low{% endif %} {% if alert.acknowledged %}acknowledged{% endif %}">
+                                                    <div class="d-flex justify-content-between align-items-start gap-2">
+                                                        <div>
+                                                            <div class="fw-semibold">{{ alert.message }}</div>
+                                                            <div class="small text-secondary">{{ alert.created_at.astimezone().strftime('%d/%m/%Y %H:%M:%S') }}</div>
+                                                        </div>
+                                                        {% if alert.acknowledged %}
+                                                            <span class="small badge text-bg-secondary" data-i18n="acknowledged">Acknowledged</span>
+                                                        {% else %}
+                                                            <form method="post" action="{{ url_for('acknowledge_alert', alert_id=alert.id) }}">
+                                                                <input type="hidden" name="patient_id" value="{{ selected_patient.id }}">
+                                                                <button class="btn btn-sm btn-outline-dark" type="submit" data-i18n="acknowledge">Acknowledge</button>
+                                                            </form>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                                {% endfor %}
+                                            {% else %}
+                                                <div class="text-secondary" data-i18n="noAlerts">No active alerts.</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-6">
+                        <div class="dashboard-card h-100">
+                            <h5 class="mb-3" data-i18n="calibration">Patient / Bag Settings</h5>
+                            <form action="{{ url_for('update_patient', patient_id=selected_patient.id) }}" method="post" class="row g-3">
+                                <div class="col-12">
+                                    <label class="form-label" data-i18n="patientName">Patient Name</label>
+                                    <input type="text" class="form-control" name="patient_name" value="{{ selected_patient.patient_name }}">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" data-i18n="bedNumber">Bed Number</label>
+                                    <input type="text" class="form-control" name="bed_number" value="{{ selected_patient.bed_number }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" data-i18n="fullWeight">Full IV Bag Weight (g)</label>
+                                    <input type="number" step="0.01" class="form-control" name="full_weight_g" value="{{ selected_patient.full_weight_g }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" data-i18n="emptyWeight">Empty IV Bag Weight (g)</label>
+                                    <input type="number" step="0.01" class="form-control" name="empty_weight_g" value="{{ selected_patient.empty_weight_g }}">
+                                </div>
+                                <div class="col-12 d-grid">
+                                    <button class="btn btn-primary" type="submit" data-i18n="saveChanges">Save Changes</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-6">
+                        <div class="dashboard-card h-100">
+                            <h5 class="mb-3" data-i18n="testReading">Test Reading / Manual Update</h5>
+                            <form action="{{ url_for('manual_reading', patient_id=selected_patient.id) }}" method="post" class="row g-3 mb-4">
+                                <div class="col-md-8">
+                                    <label class="form-label" data-i18n="enterWeight">Enter weight (g)</label>
+                                    <input type="number" step="0.01" class="form-control" name="weight_g" placeholder="e.g. 380">
+                                </div>
+                                <div class="col-md-4 d-grid align-items-end">
+                                    <button class="btn btn-dark" type="submit" data-i18n="submitReading">Submit Reading</button>
+                                </div>
+                            </form>
+
+                            <h6 class="mb-3" data-i18n="recentReadings">Recent Readings</h6>
+                            <div class="table-responsive">
+                                <table class="table align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th data-i18n="currentWeight">Current IV Weight</th>
+                                            <th data-i18n="ivLevel">IV Level (%)</th>
+                                            <th data-i18n="status">Status</th>
+                                            <th data-i18n="source">Source</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentReadingsBody">
+                                        {% for value in chart_weights[-8:]|reverse %}
+                                        {% set idx = chart_weights|length - loop.index %}
+                                        <tr>
+                                            <td>{{ chart_weights[idx] }} g</td>
+                                            <td>{{ chart_levels[idx] }}%</td>
+                                            <td>
+                                                {% set raw_status = 'Normal' if chart_levels[idx] > 30 else ('Low' if chart_levels[idx] >= 10 else 'Critical') %}
+                                                <span class="status-pill status-{{ raw_status|lower }}" data-status-key="{{ raw_status|lower }}">{{ raw_status }}</span>
+                                            </td>
+                                            <td>System</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let weightChart;
+    let alertSoundEnabled = true;
+    let lastAlertSignature = "";
+
+    function currentLang() {
+        return document.body.dataset.initialLanguage || localStorage.getItem('appLang') || 'en';
+    }
+
+    function t(key, fallback='') {
+        const lang = currentLang();
+        const map = TRANSLATIONS[lang] || TRANSLATIONS.en;
+        return map[key] || fallback || key;
+    }
+
+    function translateStatus(rawStatus) {
+        const key = (rawStatus || '').toLowerCase();
+        return t(key, rawStatus);
+    }
+
+    function formatStatusClass(rawStatus) {
+        return 'status-' + (rawStatus || 'normal').toLowerCase();
+    }
+
+    function buildChart() {
+        const chartCanvas = document.getElementById('weightChart');
+        if (!chartCanvas) return;
+
+        const labels = JSON.parse(chartCanvas.dataset.labels || '[]');
+        const weights = JSON.parse(chartCanvas.dataset.weights || '[]');
+        const levels = JSON.parse(chartCanvas.dataset.levels || '[]');
+
+        weightChart = new Chart(chartCanvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Weight (g)',
+                        data: weights,
+                        borderColor: '#1d72f3',
+                        backgroundColor: 'rgba(29,114,243,0.12)',
+                        borderWidth: 3,
+                        tension: 0.35,
+                        fill: true,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Level (%)',
+                        data: levels,
+                        borderColor: '#20b486',
+                        backgroundColor: 'rgba(32,180,134,0.08)',
+                        borderWidth: 2,
+                        tension: 0.35,
+                        fill: false,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Weight (g)' } },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        title: { display: true, text: 'Level (%)' },
+                        suggestedMax: 100,
+                        max: 100
+                    }
+                }
+            }
+        });
+    }
+
+    function playAlertBeep() {
+        if (!alertSoundEnabled) return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.001, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.35);
+    }
+
+    function updatePatientCards(patients, selectedPatientId) {
+        const list = document.getElementById('patientList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        patients.forEach(patient => {
+            const a = document.createElement('a');
+            a.href = `/dashboard?patient_id=${patient.id}`;
+            a.className = `patient-card-link ${Number(selectedPatientId) === Number(patient.id) ? 'active' : ''}`;
+            a.innerHTML = `
+                <div class="patient-mini-card">
+                    <div class="patient-id-badge">${patient.id}</div>
+                    <div class="patient-mini-content">
+                        <div class="patient-mini-top">
+                            <h6 class="mb-0">${patient.patient_name}</h6>
+                            <span class="status-pill ${formatStatusClass(patient.current_status)}">${translateStatus(patient.current_status)}</span>
+                        </div>
+                        <div class="small text-secondary">${patient.bed_number}</div>
+                        <div class="small text-secondary">${patient.current_weight_g} g · ${patient.current_level_percent}%</div>
+                    </div>
+                </div>`;
+            list.appendChild(a);
+        });
+    }
+
+    function updateSelectedPatient(patient) {
+        document.getElementById('selectedPatientName').textContent = patient.patient_name;
+        document.getElementById('selectedPatientId').textContent = patient.id;
+        document.getElementById('selectedBedNumber').textContent = patient.bed_number;
+        document.getElementById('selectedCurrentWeightValue').textContent = patient.current_weight_g;
+        document.getElementById('selectedLevelValue').textContent = patient.current_level_percent;
+        document.getElementById('selectedStatusMetric').textContent = translateStatus(patient.current_status);
+        document.getElementById('selectedLastUpdate').textContent = patient.last_update_time;
+
+        const summary = document.getElementById('selectedStatusSummary');
+        const summaryText = document.getElementById('selectedStatusText');
+        summary.className = `status-summary ${formatStatusClass(patient.current_status)}`;
+        summaryText.textContent = translateStatus(patient.current_status);
+    }
+
+    function updateAlerts(alerts) {
+        const container = document.getElementById('alertsList');
+        if (!container) return;
+
+        const signature = JSON.stringify(alerts.map(a => [a.id, a.acknowledged]));
+        const hasUrgent = alerts.some(a => !a.acknowledged && (a.alert_type === 'Low' || a.alert_type === 'Critical'));
+        if (signature !== lastAlertSignature && hasUrgent) {
+            playAlertBeep();
+        }
+        lastAlertSignature = signature;
+
+        if (!alerts.length) {
+            container.innerHTML = `<div class="text-secondary">${t('noAlerts', 'No active alerts.')}</div>`;
+            return;
+        }
+
+        container.innerHTML = alerts.map(alert => `
+            <div class="alert-item ${alert.alert_type === 'Critical' ? 'critical' : 'low'} ${alert.acknowledged ? 'acknowledged' : ''}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-semibold">${alert.message}</div>
+                        <div class="small text-secondary">${alert.created_at}</div>
+                    </div>
+                    ${alert.acknowledged ? `<span class="small badge text-bg-secondary">${t('acknowledged', 'Acknowledged')}</span>` : `<form method="post" action="/acknowledge-alert/${alert.id}"><input type="hidden" name="patient_id" value="${document.getElementById('dashboardRoot').dataset.selectedPatientId}"><button class="btn btn-sm btn-outline-dark" type="submit">${t('acknowledge', 'Acknowledge')}</button></form>`}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function updateRecentReadings(chartData) {
+        const body = document.getElementById('recentReadingsBody');
+        if (!body) return;
+        const rows = [];
+        const count = Math.min(chartData.weights.length, 8);
+        for (let i = chartData.weights.length - 1; i >= chartData.weights.length - count; i--) {
+            const level = chartData.levels[i];
+            const rawStatus = level > 30 ? 'Normal' : (level >= 10 ? 'Low' : 'Critical');
+            rows.push(`
+                <tr>
+                    <td>${chartData.weights[i]} g</td>
+                    <td>${chartData.levels[i]}%</td>
+                    <td><span class="status-pill ${formatStatusClass(rawStatus)}">${translateStatus(rawStatus)}</span></td>
+                    <td>System</td>
+                </tr>
+            `);
+        }
+        body.innerHTML = rows.join('');
+    }
+
+    function updateChart(chartData) {
+        if (!weightChart) return;
+        weightChart.data.labels = chartData.labels;
+        weightChart.data.datasets[0].data = chartData.weights;
+        weightChart.data.datasets[1].data = chartData.levels;
+        weightChart.update();
+    }
+
+    async function refreshDashboardData() {
+        const root = document.getElementById('dashboardRoot');
+        if (!root) return;
+        const selectedPatientId = root.dataset.selectedPatientId;
+        try {
+            const res = await fetch(`/api/dashboard-data/${selectedPatientId}`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            updatePatientCards(data.patients, selectedPatientId);
+            updateSelectedPatient(data.selected_patient);
+            updateAlerts(data.alerts);
+            updateRecentReadings(data.chart);
+            updateChart(data.chart);
+        } catch (error) {
+            console.error('Auto refresh failed:', error);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        buildChart();
+
+        const toggle = document.getElementById('alertSoundToggle');
+        if (toggle) {
+            toggle.addEventListener('click', function() {
+                alertSoundEnabled = !alertSoundEnabled;
+                toggle.textContent = `Alert Sound: ${alertSoundEnabled ? 'On' : 'Off'}`;
+                toggle.classList.toggle('btn-outline-primary', alertSoundEnabled);
+                toggle.classList.toggle('btn-outline-secondary', !alertSoundEnabled);
+            });
+        }
+
+        setInterval(refreshDashboardData, 10000);
+    });
+</script>
+{% endblock %}

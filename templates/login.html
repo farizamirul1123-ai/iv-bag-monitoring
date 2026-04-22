@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}IV Monitor Login{% endblock %}
+{% block content %}
+<div class="landing-shell">
+    <div class="container py-4 py-md-5">
+        <div class="d-flex justify-content-end mb-3">
+            <form method="post" action="{{ url_for('set_language', lang='ms' if active_language == 'en' else 'en') }}">
+                <input type="hidden" name="next_url" value="{{ request.path }}">
+                <button class="btn btn-outline-light rounded-pill px-4" type="submit" data-i18n="languageButton">BM / EN</button>
+            </form>
+        </div>
+
+        <div class="row align-items-center g-4">
+            <div class="col-lg-6">
+                <div class="glass-panel hero-panel p-4 p-lg-5">
+                    <span class="eyebrow" data-i18n="systemName">IV Bag Monitoring System</span>
+                    <h1 class="hero-title mt-3" data-i18n="welcomeTitle">Smart IV Monitoring</h1>
+                    <p class="hero-subtitle" data-i18n="welcomeSubtitle">
+                        Professional monitoring dashboard for real-time IV bag level tracking.
+                    </p>
+
+                    <div class="iv-showcase mt-4">
+                        <div class="iv-illustration">
+                            <svg viewBox="0 0 320 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="IV Bag">
+                                <defs>
+                                    <linearGradient id="bagFill" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#75c8ff"/>
+                                        <stop offset="100%" stop-color="#2694ff"/>
+                                    </linearGradient>
+                                </defs>
+                                <rect x="130" y="30" width="60" height="40" rx="14" fill="#dce7f3"/>
+                                <path d="M160 70 L160 95" stroke="#dce7f3" stroke-width="10" stroke-linecap="round"/>
+                                <rect x="70" y="95" width="180" height="220" rx="34" fill="#eef5fb" stroke="#d8e4f2" stroke-width="10"/>
+                                <rect x="95" y="130" width="130" height="150" rx="24" fill="url(#bagFill)" opacity="0.9"/>
+                                <circle cx="160" cy="205" r="18" fill="#ffffff" opacity="0.5"/>
+                                <path d="M160 315 L160 380" stroke="#a7bed3" stroke-width="10" stroke-linecap="round"/>
+                                <path d="M160 380 C160 395, 170 400, 170 410" stroke="#a7bed3" stroke-width="8" fill="none" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                        <p class="text-light text-center mt-3 mb-0" data-i18n="ivBagImageTitle">Click a monitor name to continue</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="glass-panel p-4 p-lg-5">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                        <div>
+                            <h2 class="panel-title mb-1" data-i18n="monitorSignIn">Monitor Sign In</h2>
+                            <p class="panel-muted mb-0" data-i18n="chooseMonitor">Choose the monitoring staff who is using the system.</p>
+                        </div>
+                        <div class="time-chip">
+                            <i class="bi bi-globe2"></i>
+                            <span id="loginLocalClockLabel" data-i18n="localTime">Local Time</span>: <span id="loginLocalClock">--:--:--</span>
+                        </div>
+                    </div>
+
+                    {% with messages = get_flashed_messages() %}
+                        {% if messages %}
+                            <div class="alert alert-warning">{{ messages[0] }}</div>
+                        {% endif %}
+                    {% endwith %}
+
+                    <form method="post" action="{{ url_for('login') }}" class="mt-4">
+                        <label class="form-label fw-semibold" data-i18n="selectMonitor">Select monitor name</label>
+                        <div class="monitor-grid mb-4">
+                            {% for monitor in monitor_options %}
+                            <label class="monitor-card">
+                                <input type="radio" name="monitor_name" value="{{ monitor }}" {% if loop.first %}checked{% endif %}>
+                                <div class="monitor-card-inner">
+                                    <div class="avatar-circle"><i class="bi bi-person-badge"></i></div>
+                                    <h5>{{ monitor }}</h5>
+                                    <span class="small text-secondary">IV Monitoring Staff</span>
+                                </div>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg w-100 rounded-4">
+                            <i class="bi bi-box-arrow-in-right me-2"></i><span data-i18n="enterDashboard">Enter Monitoring Dashboard</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

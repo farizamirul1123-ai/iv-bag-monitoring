@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}IV Bag Monitoring System{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
+</head>
+<body data-initial-language="{{ active_language }}">
+    {% block content %}{% endblock %}
+
+    <script>
+        const TRANSLATIONS = {
+            en: {
+                systemName: "IV Bag Monitoring System",
+                languageButton: "BM / EN",
+                welcomeTitle: "Smart IV Monitoring",
+                welcomeSubtitle: "Professional monitoring dashboard for real-time IV bag level tracking.",
+                selectMonitor: "Select monitor name",
+                chooseMonitor: "Choose the monitoring staff who is using the system.",
+                enterDashboard: "Enter Monitoring Dashboard",
+                monitorSignIn: "Monitor Sign In",
+                worldTime: "Local Time",
+                localTime: "Local Time",
+                monitoredBy: "Monitored by",
+                patientList: "Patient List",
+                patientDetails: "Patient Details",
+                patientId: "Patient ID",
+                patientName: "Patient Name",
+                bedNumber: "Bed Number",
+                currentWeight: "Current IV Weight",
+                ivLevel: "IV Level (%)",
+                status: "Status",
+                lastUpdate: "Last Update Time",
+                trendGraph: "Weight Trend Graph",
+                alerts: "Alert Section",
+                exportExcel: "Export Excel",
+                logout: "Logout",
+                calibration: "Patient / Bag Settings",
+                fullWeight: "Full IV Bag Weight (g)",
+                emptyWeight: "Empty IV Bag Weight (g)",
+                saveChanges: "Save Changes",
+                testReading: "Test Reading / Manual Update",
+                enterWeight: "Enter weight (g)",
+                submitReading: "Submit Reading",
+                low: "Low",
+                critical: "Critical",
+                normal: "Normal",
+                acknowledged: "Acknowledged",
+                acknowledge: "Acknowledge",
+                noAlerts: "No active alerts.",
+                recentReadings: "Recent Readings",
+                clickPatient: "Click a patient card to view details.",
+                source: "Source",
+                realtimeClock: "Real-Time Clock",
+                lastSeen: "Last seen",
+                viewPatient: "View",
+                ivBagImageTitle: "Click a monitor name to continue",
+                graphWeight: "Weight (g)",
+                graphLevel: "Level (%)",
+                dashboard: "Dashboard",
+            },
+            ms: {
+                systemName: "Sistem Pemantauan Beg IV",
+                languageButton: "BM / EN",
+                welcomeTitle: "Pemantauan IV Pintar",
+                welcomeSubtitle: "Dashboard pemantauan profesional untuk menjejak paras beg IV secara masa nyata.",
+                selectMonitor: "Pilih nama pemantau",
+                chooseMonitor: "Pilih staf pemantau yang menggunakan sistem ini.",
+                enterDashboard: "Masuk ke Dashboard Pemantauan",
+                monitorSignIn: "Log Masuk Pemantau",
+                worldTime: "Masa Tempatan",
+                localTime: "Masa Tempatan",
+                monitoredBy: "Dipantau oleh",
+                patientList: "Senarai Pesakit",
+                patientDetails: "Maklumat Pesakit",
+                patientId: "ID Pesakit",
+                patientName: "Nama Pesakit",
+                bedNumber: "Nombor Katil",
+                currentWeight: "Berat IV Semasa",
+                ivLevel: "Paras IV (%)",
+                status: "Status",
+                lastUpdate: "Masa Kemaskini Terakhir",
+                trendGraph: "Graf Trend Berat",
+                alerts: "Bahagian Amaran",
+                exportExcel: "Eksport Excel",
+                logout: "Log Keluar",
+                calibration: "Tetapan Pesakit / Beg",
+                fullWeight: "Berat Beg IV Penuh (g)",
+                emptyWeight: "Berat Beg Kosong (g)",
+                saveChanges: "Simpan Perubahan",
+                testReading: "Bacaan Ujian / Kemaskini Manual",
+                enterWeight: "Masukkan berat (g)",
+                submitReading: "Hantar Bacaan",
+                low: "Rendah",
+                critical: "Kritikal",
+                normal: "Normal",
+                acknowledged: "Diakui",
+                acknowledge: "Sahkan",
+                noAlerts: "Tiada amaran aktif.",
+                recentReadings: "Bacaan Terkini",
+                clickPatient: "Klik kad pesakit untuk lihat maklumat.",
+                source: "Sumber",
+                realtimeClock: "Jam Masa Nyata",
+                lastSeen: "Terakhir dikesan",
+                viewPatient: "Lihat",
+                ivBagImageTitle: "Klik nama pemantau untuk teruskan",
+                graphWeight: "Berat (g)",
+                graphLevel: "Paras (%)",
+                dashboard: "Dashboard",
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
