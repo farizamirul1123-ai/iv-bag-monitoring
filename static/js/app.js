@@ -71,6 +71,11 @@
         document.querySelectorAll(selector).forEach(el => { el.textContent = value; });
     }
 
+    function formatWeight(value) {
+        const n = Math.max(0, Number(value || 0));
+        return `${Math.round(n).toLocaleString()} g`;
+    }
+
     function cssVar(name, fallback) {
         return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
     }
@@ -102,7 +107,7 @@
     function relabelCharts() {
         Object.values(chartRefs).forEach(chart => {
             if (!chart) return;
-            chart.options.scales.y.title.text = chart.canvas && chart.canvas.id === 'dropComparisonChart' ? t('dropsPerMin', 'Drops/min') : t('weight', 'Weight (g)');
+            chart.options.scales.y.title.text = chart.canvas && (chart.canvas.id === 'dropComparisonChart' || chart.canvas.id === 'monitorDropComparisonChart') ? t('dropsPerMin', 'Drops/min') : t('weight', 'Weight (g)');
             if (chart.data.datasets && chart.canvas && chart.canvas.id !== 'dropComparisonChart') {
                 chart.data.datasets[0].label = t('weight', 'Weight (g)');
             }
@@ -117,7 +122,7 @@
         const labels = (patient.readings || []).map(r => r.label);
         const weights = (patient.readings || []).map(r => r.weight_g);
         const ctx = canvas.getContext('2d');
-        const teal = 'rgba(0,153,168,1)';
+        const teal = Number(patient.id) % 2 === 0 ? 'rgba(255,134,46,1)' : 'rgba(0,153,168,1)';
 
         if (!chartRefs[canvas.id]) {
             chartRefs[canvas.id] = new Chart(canvas, {
@@ -149,14 +154,12 @@
     }
 
     function buildOrUpdateDropChart(data) {
-        const canvas = document.getElementById('dropComparisonChart');
-        if (!canvas || !window.Chart) return;
         const labels = (data.drop_comparison && data.drop_comparison.labels) || [];
         const series = (data.drop_comparison && data.drop_comparison.series) || [];
         const colors = ['rgba(0,153,168,1)', 'rgba(255,134,46,1)'];
         const datasets = series.map((item, index) => ({
             label: item.patient_name || `${t('patient', 'Patient')} ${index + 1}`,
-            data: item.drops || [],
+            data: (item.drops || []).map(v => Math.max(0, Number(v || 0))),
             borderColor: colors[index % colors.length],
             backgroundColor: colors[index % colors.length].replace('1)', '.08)'),
             borderWidth: 3,
@@ -166,19 +169,23 @@
             fill: false
         }));
 
-        if (!chartRefs.dropComparisonChart) {
-            chartRefs.dropComparisonChart = new Chart(canvas, {
-                type: 'line',
-                data: { labels, datasets },
-                options: chartBaseOptions(t('dropsPerMin', 'Drops/min'))
-            });
-        } else {
-            const chart = chartRefs.dropComparisonChart;
-            chart.data.labels = labels;
-            chart.data.datasets = datasets;
-            chart.options.scales.y.title.text = t('dropsPerMin', 'Drops/min');
-            chart.update();
-        }
+        ['dropComparisonChart', 'monitorDropComparisonChart'].forEach(id => {
+            const canvas = document.getElementById(id);
+            if (!canvas || !window.Chart) return;
+            if (!chartRefs[id]) {
+                chartRefs[id] = new Chart(canvas, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: chartBaseOptions(t('dropsPerMin', 'Drops/min'))
+                });
+            } else {
+                const chart = chartRefs[id];
+                chart.data.labels = labels;
+                chart.data.datasets = datasets;
+                chart.options.scales.y.title.text = t('dropsPerMin', 'Drops/min');
+                chart.update();
+            }
+        });
     }
 
     function updatePatientCard(patient) {
@@ -193,10 +200,14 @@
         setText(`[data-patient-code="${patient.id}"]`, patient.patient_code);
         setText(`[data-patient-ward="${patient.id}"]`, patient.ward_number);
         setText(`[data-patient-bed="${patient.id}"]`, patient.bed_number);
-        setText(`[data-patient-weight="${patient.id}"]`, `${Math.round(Number(patient.current_weight_g || 0))} g`);
+        setText(`[data-patient-weight="${patient.id}"]`, formatWeight(patient.remaining_weight_g));
+        setText(`[data-patient-current-weight="${patient.id}"]`, formatWeight(patient.current_weight_g));
+        setText(`[data-patient-remaining-weight="${patient.id}"]`, formatWeight(patient.remaining_weight_g));
+        setText(`[data-patient-full-weight="${patient.id}"]`, formatWeight(patient.full_weight_g));
+        setText(`[data-patient-empty-weight="${patient.id}"]`, formatWeight(patient.empty_weight_g));
         setText(`[data-patient-drop="${patient.id}"]`, Number(patient.current_drop_rate || 0).toFixed(0));
         setText(`[data-patient-flow="${patient.id}"]`, Number(patient.current_flow_rate_ml_hr || 0).toFixed(0));
-        setText(`[data-patient-updated="${patient.id}"]`, patient.last_update_time || '--:--:--');
+        setText(`[data-patient-updated="${patient.id}"]`, patient.last_update_full || patient.last_update_time || '--:--:--');
 
         levelEls.forEach(level => {
             level.textContent = `${percent}%`;

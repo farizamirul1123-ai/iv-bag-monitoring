@@ -475,31 +475,36 @@ def get_readings(patient_id, limit=50):
 
 def patient_payload(patient, readings=None):
     readings = readings if readings is not None else get_readings(patient.id, limit=50)
+    current_weight = max(float(patient.current_weight_g or 0), 0.0)
+    full_weight = max(float(patient.full_weight_g or 0), 0.0)
+    empty_weight = max(float(patient.empty_weight_g or 0), 0.0)
+    remaining_weight = max(current_weight - empty_weight, 0.0)
     return {
         "id": patient.id,
         "patient_code": f"PT{patient.id:03d}",
         "patient_name": patient.patient_name,
         "bed_number": patient.bed_number,
         "ward_number": patient.ward_number or "Ward 3A",
-        "current_weight_g": round(patient.current_weight_g or 0, 2),
-        "current_level_percent": round(patient.current_level_percent or 0, 2),
+        "current_weight_g": round(current_weight, 2),
+        "remaining_weight_g": round(remaining_weight, 2),
+        "current_level_percent": round(max(patient.current_level_percent or 0, 0), 2),
         "current_status": patient.current_status or "Normal",
         "current_drop_rate": round(patient.current_drop_rate or 0, 2),
         "current_flow_rate_ml_hr": round(patient.current_flow_rate_ml_hr or 0, 2),
         "current_drip_status": patient.current_drip_status or "Normal",
         "last_update_time": format_time(patient.last_update_time),
-        "last_update_full": format_dt(patient.last_update_time),
-        "full_weight_g": round(patient.full_weight_g or 0, 2),
-        "empty_weight_g": round(patient.empty_weight_g or 0, 2),
+        "last_update_full": format_dt(patient.last_update_time, "%d/%m/%Y, %I:%M:%S %p"),
+        "full_weight_g": round(full_weight, 2),
+        "empty_weight_g": round(empty_weight, 2),
         "readings": [
             {
-                "label": format_dt(r.created_at, "%H:%M:%S"),
-                "time": format_dt(r.created_at, "%d/%m %H:%M:%S"),
-                "weight_g": round(r.weight_g or 0, 2),
-                "level_percent": round(r.level_percent or 0, 2),
+                "label": format_dt(r.created_at, "%I:%M %p"),
+                "time": format_dt(r.created_at, "%d/%m/%Y, %I:%M:%S %p"),
+                "weight_g": round(max(r.weight_g or 0, 0), 2),
+                "level_percent": round(max(r.level_percent or 0, 0), 2),
                 "status": r.status or "Normal",
-                "drops_per_min": round(r.drops_per_min or 0, 2),
-                "flow_rate_ml_hr": round(r.flow_rate_ml_hr or 0, 2),
+                "drops_per_min": round(max(r.drops_per_min or 0, 0), 2),
+                "flow_rate_ml_hr": round(max(r.flow_rate_ml_hr or 0, 0), 2),
                 "drip_status": r.drip_status or "Normal",
                 "source": r.source or "system",
             }
