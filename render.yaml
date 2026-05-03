@@ -1,7 +1,8 @@
 services:
   - type: web
-    name: iv-bag-monitoring
+    name: iv-monitoring-dashboard
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
@@ -10,13 +11,14 @@ services:
       - key: API_KEY
         value: IVMONITOR123
       - key: DROP_FACTOR
-        value: "20"
-      - key: PYTHON_VERSION
-        value: 3.11.9
+        value: 20
+      - key: AUTO_DEMO
+        value: true
       - key: DATABASE_URL
         fromDatabase:
-          name: iv-bag-db
+          name: iv-monitoring-postgres
           property: connectionString
 
 databases:
-  - name: iv-bag-db
+  - name: iv-monitoring-postgres
+    plan: free

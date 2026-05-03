@@ -1,0 +1,29 @@
+<div class="iv-bag {{ bag_class|default('') }}" style="--iv-level: {{ level|default(68) }}%; --iv-color: {{ color|default('#0797a5') }}">
+    <svg viewBox="0 0 170 250" role="img" aria-label="IV bag">
+        <defs>
+            <linearGradient id="bagGlass" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0" stop-color="#ffffff" stop-opacity=".95"/>
+                <stop offset=".55" stop-color="#e8f3fb" stop-opacity=".55"/>
+                <stop offset="1" stop-color="#ffffff" stop-opacity=".78"/>
+            </linearGradient>
+            <filter id="softBagShadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="12" stdDeviation="8" flood-color="#08285a" flood-opacity=".18"/>
+            </filter>
+        </defs>
+        <path class="hook" d="M85 15 C85 0 105 0 105 14 C105 25 94 31 85 31 C76 31 65 25 65 14" fill="none" stroke="#67798f" stroke-width="6" stroke-linecap="round"/>
+        <path class="bag-shell" filter="url(#softBagShadow)" d="M42 38 C23 45 23 67 31 86 C19 115 19 160 31 191 C24 210 32 225 55 220 C69 234 101 234 115 220 C138 225 146 210 139 191 C151 160 151 115 139 86 C147 67 147 45 128 38 C112 47 58 47 42 38 Z" fill="url(#bagGlass)" stroke="#b7cfdf" stroke-width="4"/>
+        <clipPath id="liquidClip"><path d="M42 38 C23 45 23 67 31 86 C19 115 19 160 31 191 C24 210 32 225 55 220 C69 234 101 234 115 220 C138 225 146 210 139 191 C151 160 151 115 139 86 C147 67 147 45 128 38 C112 47 58 47 42 38 Z"/></clipPath>
+        <rect class="bag-liquid" x="25" y="calc(220px - var(--iv-level) * 1.75)" width="120" height="190" clip-path="url(#liquidClip)" fill="var(--iv-color)" opacity=".28"/>
+        <path d="M48 58 C64 65 102 64 123 57" fill="none" stroke="#ffffff" stroke-width="5" opacity=".8"/>
+        <g class="bag-lines" stroke="#0d4fa5" stroke-width="3" stroke-linecap="round">
+            <line x1="101" y1="76" x2="126" y2="76"/><line x1="111" y1="97" x2="126" y2="97"/>
+            <line x1="101" y1="118" x2="126" y2="118"/><line x1="111" y1="139" x2="126" y2="139"/>
+            <line x1="101" y1="160" x2="126" y2="160"/><line x1="111" y1="181" x2="126" y2="181"/>
+        </g>
+        <g fill="#0d4fa5" font-family="Inter, Arial" font-size="13" font-weight="800">
+            <text x="61" y="80">500</text><text x="61" y="122">300</text><text x="61" y="164">100</text>
+        </g>
+        <rect x="72" y="218" width="27" height="23" rx="6" fill="#e8f3fb" stroke="#b7cfdf" stroke-width="3"/>
+        <path d="M85 241 L85 248" stroke="#9eb6c9" stroke-width="8" stroke-linecap="round"/>
+    </svg>
+</div>

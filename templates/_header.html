@@ -1,0 +1,16 @@
+<header class="top-header">
+    <div class="brand-left">
+        <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik" class="psp-logo">
+        <span class="brand-divider"></span>
+        <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="kpm-logo">
+    </div>
+    <a href="{{ url_for('index') }}" class="system-title">
+        <span class="system-icon">▣</span>
+        <span><strong>IV Monitoring System</strong><small data-i18n="systemSubtitle">Smart IV Monitoring System</small></span>
+    </a>
+    <div class="language-toggle" aria-label="Language switch">
+        <button type="button" data-set-lang="ms">BM</button>
+        <span></span>
+        <button type="button" data-set-lang="en">EN</button>
+    </div>
+</header>

@@ -1,119 +1,53 @@
 # IV Monitoring System Dashboard
 
-Professional Flask + PostgreSQL + ESP32 dashboard for monitoring IV bag level using a load cell and drop detector.
+Full Flask + PostgreSQL/SQLite dashboard for ESP32 + HX711 IV bag monitoring.
 
-## Main updates in this version
-
-- New premium landing page with Politeknik Seberang Perai and Kementerian Pendidikan logos.
-- New monitor selection page for Fariz, Hareny, and Madam Ku Lee Chin.
-- New responsive dashboard for 2 patients only.
-- Live cards for IV level, remaining weight, drip rate, flow rate, status, and last update time.
-- Moving Chart.js graphs:
-  - IV Weight vs Time for Patient A
-  - IV Weight vs Time for Patient B
-  - Drop Rate Comparison / All Drop Trend
-- ESP32 `/api/update` now accepts `drop_count`, `drops_per_min`, and `drip_status`.
-- Excel export includes patient status, readings, drop rate, flow rate, and alerts.
-- Mobile-friendly layout with bottom navigation.
-- Auto-refresh every 5 seconds.
-- PostgreSQL/Render ready.
-
-## Folder structure
-
-```bash
-iv_monitoring_project/
-├── app.py
-├── requirements.txt
-├── runtime.txt
-├── render.yaml
-├── .env.example
-├── templates/
-│   ├── base.html
-│   ├── landing.html
-│   ├── select_monitor.html
-│   ├── dashboard.html
-│   └── partials_iv_bag.html
-├── static/
-│   ├── css/styles.css
-│   ├── js/app.js
-│   └── img/
-│       ├── psp-logo.png
-│       └── kpm-logo.png
-└── esp32/
-    └── esp32_hx711_iv_monitor/
-        └── esp32_hx711_iv_monitor.ino
-```
+## Features
+- Welcome page, monitor selection page, and professional dashboard interface.
+- Sidebar sections: Dashboard, Monitors, Patients, Alerts, Reports, Settings.
+- BM/EN switch: the interface changes fully to Bahasa Melayu or English.
+- Responsive layout for laptop and phone. On phone, the sidebar becomes a bottom navigation bar.
+- Animated live indicators, smooth page transition, moving charts, and animated IV bag fill.
+- Excel export endpoint.
+- PostgreSQL ready for Render. SQLite runs automatically for local testing.
+- ESP32 API endpoint: `/api/update`.
 
 ## Run locally
-
 ```bash
+cd iv_monitoring_dashboard_final
+python -m venv .venv
+.venv\Scripts\activate   # Windows
 pip install -r requirements.txt
 python app.py
 ```
+Open: `http://127.0.0.1:5000`
 
-Open:
+## Render deployment
+1. Upload this folder to GitHub.
+2. On Render, create a new Web Service from the repository.
+3. Add PostgreSQL database or use `render.yaml`.
+4. Environment variables:
+   - `DATABASE_URL` = Render PostgreSQL external/internal connection string
+   - `API_KEY` = `IVMONITOR123` or your own key
+   - `AUTO_DEMO=true` for demo moving graph without ESP32
+   - Set `AUTO_DEMO=false` when you only want real ESP32 data.
 
-```text
-http://127.0.0.1:5000
+## ESP32 POST format
+Send JSON to:
 ```
-
-## ESP32 data format
-
-The ESP32 can send JSON data to:
-
-```text
-POST /api/update
+https://your-render-url.onrender.com/api/update
 ```
-
-Example:
-
+Example body:
 ```json
 {
   "api_key": "IVMONITOR123",
   "patient_id": 1,
-  "weight_g": 340.0,
-  "drop_count": 120,
-  "drops_per_min": 24.0,
-  "drip_status": "Normal"
+  "weight_g": 540,
+  "drops_per_min": 24
 }
 ```
+Accepted weight keys include: `weight_g`, `weight`, `total_weight`, `total_weight_g`.
+Accepted drip keys include: `drops_per_min`, `drop_rate`, `drip_rate`.
 
-For Patient 1, set:
-
-```cpp
-const int PATIENT_ID = 1;
-```
-
-For Patient 2, set:
-
-```cpp
-const int PATIENT_ID = 2;
-```
-
-## Dashboard status logic
-
-- Normal: IV level above 30%
-- Low: IV level from 10% to 30%
-- Critical: IV level below 10%
-
-Flow rate is calculated using:
-
-```text
-ml/hr = drops_per_min × 60 / DROP_FACTOR
-```
-
-Default `DROP_FACTOR` is `20 drops/ml`. You can change it in Render environment variables if your drip set uses a different drop factor.
-
-## Render deployment
-
-This project includes `render.yaml`. The database is connected using the `DATABASE_URL` environment variable. The app automatically upgrades old database tables by adding the new drop-rate columns if they are missing.
-
-## Notes
-
-If your graph does not move:
-
-1. Check Serial Monitor to confirm ESP32 is sending new readings.
-2. Confirm the Render URL in ESP32 ends with `/api/update`.
-3. Confirm `API_KEY` in ESP32 matches Render environment variable.
-4. Confirm `patient_id` is either `1` or `2`.
-5. Open `/api/dashboard-data` in the browser and check whether new readings appear.
+## Important note
+For real monitoring, ESP32 must run and send data to `/api/update`. If ESP32 is not running, `AUTO_DEMO=true` will still make the graph move so the dashboard can be tested and presented.
