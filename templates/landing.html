@@ -1,39 +1,59 @@
 {% extends 'base.html' %}
-{% block title %}Welcome | IV Monitoring{% endblock %}
+{% block title %}Welcome to IV Monitoring{% endblock %}
 {% block content %}
-<div class="public-shell landing-shell">
-    {% include '_header.html' %}
-    <main class="welcome-hero reveal-page">
-        <section class="hero-card">
-            <div class="hero-copy">
-                <h1 data-i18n="welcomeTitle">Welcome to IV Monitoring</h1>
-                <p class="hero-subtitle" data-i18n="welcomeSubtitle">Smart IV Monitoring System</p>
-                <span class="accent-line"></span>
-                <p class="hero-text" data-i18n="welcomeText">A smart solution for real-time intravenous (IV) monitoring. Empowering healthcare with accurate data, instant alerts, and better patient care.</p>
-                <a class="start-tile" href="{{ url_for('select_monitor') }}">
-                    <span class="tap-circle">☝</span>
-                    <span><b data-i18n="tapStart">Tap to Start</b><small data-i18n="selectMonitorToView">Select a monitor to view real-time data</small></span>
-                    <em>→</em>
-                </a>
-            </div>
-            <a class="hero-visual" href="{{ url_for('select_monitor') }}" aria-label="Open monitor selection">
-                <div class="hospital-bg"></div>
-                <div class="iv-stand"></div>
-                {% with level=68, color='#0b9aaa', bag_class='hero-bag' %}{% include '_iv_bag.html' %}{% endwith %}
-                <div class="floating-info"><b>i</b><span data-i18n="infoOpenMonitor">Click the IV bag or tap the button to open monitor selection.</span></div>
+<div class="site-shell landing-page">
+    <header class="brand-header">
+        <div class="brand-logos">
+            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik Seberang Perai" class="brand-logo psp-logo">
+            <span class="logo-divider"></span>
+            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="brand-logo kpm-logo">
+        </div>
+        <a class="system-mark" href="{{ url_for('index') }}">
+            <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
+            <span>
+                <strong>IV Monitoring System</strong>
+                <small data-i18n="systemSubtitle">Sistem Pemantauan IV Pintar</small>
+            </span>
+        </a>
+        {% include '_language_switch.html' %}
+    </header>
+
+    <main class="hero-section">
+        <div class="hero-copy">
+            <div class="hero-kicker" data-i18n="finalYearProject">Final Year Project Dashboard</div>
+            <h1 data-i18n="welcomeTitle">Welcome to IV Monitoring</h1>
+            <p class="hero-subtitle" data-i18n="welcomeSubtitle">Smart IV Monitoring System</p>
+            <div class="accent-line"></div>
+            <p class="hero-text" data-i18n="welcomeText">A smart solution for real-time intravenous (IV) monitoring. Designed for accurate patient observation, cloud data storage, instant alerts, and better clinical workflow.</p>
+
+            <a class="start-card" href="{{ url_for('select_monitor') }}">
+                <span class="touch-icon"><i class="bi bi-hand-index-thumb"></i></span>
+                <span class="start-copy">
+                    <strong data-i18n="tapStart">Tap to Start</strong>
+                    <small data-i18n="selectMonitorToView">Select a monitor to view real-time data</small>
+                </span>
+                <span class="start-arrow"><i class="bi bi-arrow-right"></i></span>
             </a>
-        </section>
-        <section class="feature-zone">
-            <h2><span>✦</span> <b data-i18n="systemFeatures">System Features</b></h2>
-            <div class="feature-grid">
-                <article><div>▰</div><b data-i18n="realtimeMonitoring">Real-time Monitoring</b><p data-i18n="realtimeMonitoringDesc">Live tracking of IV flow, drip rate, and remaining volume.</p></article>
-                <article><div>🔔</div><b data-i18n="smartNotifications">Smart Notifications</b><p data-i18n="smartNotificationsDesc">Instant alerts for low volume or abnormalities.</p></article>
-                <article><div>▣</div><b data-i18n="excelExport">Excel Export</b><p data-i18n="excelExportDesc">Export patient data and logs to Excel with one click.</p></article>
-                <article><div>▯</div><b data-i18n="responsiveAccess">Responsive Access</b><p data-i18n="responsiveAccessDesc">Access monitors securely from desktop or mobile devices.</p></article>
-                <article><div>☁</div><b data-i18n="cloudIntegration">Cloud Integration</b><p data-i18n="cloudIntegrationDesc">Powered by PostgreSQL database on Render cloud.</p></article>
-            </div>
-        </section>
+        </div>
+
+        <a class="iv-hero-visual" href="{{ url_for('select_monitor') }}" aria-label="Open monitor selection">
+            <div class="hospital-blur"></div>
+            {% include 'partials_iv_bag.html' ignore missing %}
+            <div class="info-bubble"><i class="bi bi-info-circle-fill"></i><span data-i18n="infoOpenMonitor">Click the IV bag or tap the button to open monitor selection.</span></div>
+        </a>
     </main>
-    {% include '_footer.html' %}
+
+    <section class="features-section">
+        <h2><i class="bi bi-stars"></i> <span data-i18n="systemFeatures">System Features</span></h2>
+        <div class="feature-grid">
+            <div class="feature-card"><i class="bi bi-activity"></i><strong data-i18n="realtimeMonitoring">Real-time Monitoring</strong><span data-i18n="realtimeMonitoringDesc">Live tracking of IV weight, level, and drip rate.</span></div>
+            <div class="feature-card"><i class="bi bi-bell-fill"></i><strong data-i18n="smartNotifications">Smart Notifications</strong><span data-i18n="smartNotificationsDesc">Instant warning for low or critical IV level.</span></div>
+            <div class="feature-card"><i class="bi bi-file-earmark-excel-fill"></i><strong data-i18n="excelExport">Excel Export</strong><span data-i18n="excelExportDesc">Export patient records and logs in one click.</span></div>
+            <div class="feature-card"><i class="bi bi-phone-fill"></i><strong data-i18n="responsiveAccess">Responsive Access</strong><span data-i18n="responsiveAccessDesc">Designed for laptop, tablet, and phone view.</span></div>
+            <div class="feature-card"><i class="bi bi-database-fill-check"></i><strong data-i18n="cloudIntegration">Cloud Integration</strong><span data-i18n="cloudIntegrationDesc">Ready for PostgreSQL database on Render.</span></div>
+        </div>
+    </section>
+
+    <footer class="site-footer"><i class="bi bi-shield-plus"></i> <b data-i18n="finalYearProject">Final Year Project Dashboard</b> <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
 </div>
 {% endblock %}

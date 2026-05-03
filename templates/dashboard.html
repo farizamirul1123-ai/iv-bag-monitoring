@@ -1,146 +1,290 @@
 {% extends 'base.html' %}
-{% block title %}Dashboard | IV Monitoring{% endblock %}
-{% set patients = data.patients %}
-{% set alerts = data.alerts %}
+{% block title %}IV Monitoring Dashboard{% endblock %}
 {% block content %}
-<div class="app-frame reveal-page" data-dashboard-page>
-    {% include '_header.html' %}
-    <aside class="sidebar">
-        <button class="nav-item active" data-open-section="dashboard"><span>⌂</span><b data-i18n="dashboard">Dashboard</b></button>
-        <button class="nav-item" data-open-section="monitors"><span>▣</span><b data-i18n="monitors">Monitors</b></button>
-        <button class="nav-item" data-open-section="patients"><span>♙</span><b data-i18n="patients">Patients</b></button>
-        <button class="nav-item" data-open-section="alerts"><span>🔔</span><b data-i18n="alerts">Alerts</b><em data-alert-badge>{{ data.active_alert_count }}</em></button>
-        <button class="nav-item" data-open-section="reports"><span>▤</span><b data-i18n="reports">Reports</b></button>
-        <button class="nav-item" data-open-section="settings"><span>⚙</span><b data-i18n="settings">Settings</b></button>
-        <button class="collapse-item"><span>≪</span><b data-i18n="collapse">Collapse</b></button>
+<div class="app-dashboard" id="dashboardRoot">
+    <aside class="side-nav">
+        <div class="side-brand"><i class="bi bi-prescription2"></i><span>IV Monitor</span></div>
+        <button class="side-link active" type="button" data-section-target="dashboard"><i class="bi bi-grid-1x2-fill"></i><span data-i18n="dashboard">Dashboard</span></button>
+        <button class="side-link" type="button" data-section-target="monitors"><i class="bi bi-pc-display"></i><span data-i18n="monitors">Monitors</span></button>
+        <button class="side-link" type="button" data-section-target="patients"><i class="bi bi-person-vcard"></i><span data-i18n="patients">Patients</span></button>
+        <button class="side-link" type="button" data-section-target="alerts"><i class="bi bi-bell"></i><span data-i18n="alerts">Alerts</span><b id="alertBadge">{{ alerts|length }}</b></button>
+        <button class="side-link" type="button" data-section-target="reports"><i class="bi bi-file-earmark-spreadsheet"></i><span data-i18n="reports">Reports</span></button>
+        <button class="side-link" type="button" data-section-target="settings"><i class="bi bi-gear"></i><span data-i18n="settings">Settings</span></button>
+        <a class="logout-link" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-left"></i><span data-i18n="logout">Logout</span></a>
     </aside>
 
-    <main class="app-content">
-        <section class="app-section active" id="section-dashboard">
-            <div class="quick-row">
-                <article class="mini-status"><span class="live-dot"></span><b data-i18n="live">LIVE</b><small data-i18n="liveDesc">Data updating in real-time</small></article>
-                <article class="mini-clock"><span>◷</span><b id="clockText">{{ data.server_time }}</b><small id="dateText">{{ data.server_date }}</small></article>
-                <a class="excel-btn" href="{{ url_for('export_excel') }}"><span>▣</span><b data-i18n="exportExcel">Export Excel</b><small data-i18n="exportExcelSmall">Export to Excel</small></a>
+    <main class="dashboard-main">
+        <header class="dashboard-header">
+            <div class="brand-logos compact">
+                <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik Seberang Perai" class="brand-logo psp-logo">
+                <span class="logo-divider"></span>
+                <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="brand-logo kpm-logo">
             </div>
+            <a class="system-mark" href="{{ url_for('dashboard') }}">
+                <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
+                <span><strong>IV Monitoring System</strong><small data-i18n="systemSubtitle">Smart IV Monitoring System</small></span>
+            </a>
+            {% include '_language_switch.html' %}
+        </header>
 
-            <div class="overview-grid">
-                {% for patient in patients %}
-                <article class="patient-card status-card-{{ patient.current_status|lower }}" data-patient-card="{{ patient.id }}">
-                    <header>
-                        <div><small data-patient-order="{{ patient.id }}">Patient {{ loop.index }}</small><h2 data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</h2><p><span data-patient-code="{{ patient.id }}">{{ patient.patient_code }}</span> <i>|</i> <span data-patient-ward="{{ patient.id }}">{{ patient.ward_number }}</span> <i>|</i> <span data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</span></p></div>
-                        <span class="bell">🔔<em>{{ loop.index }}</em></span>
-                    </header>
-                    <div class="patient-body">
-                        {% with level=patient.current_level_percent, color=('#ff862e' if patient.current_status!='Normal' else '#0797a5'), bag_class='card-bag' %}{% include '_iv_bag.html' %}{% endwith %}
-                        <div class="level-block">
-                            <small data-i18n="ivLevel">IV Level</small>
-                            <strong data-patient-level="{{ patient.id }}">{{ patient.current_level_percent|round|int }}%</strong>
-                            <div class="progress"><span data-patient-progress="{{ patient.id }}" style="width: {{ patient.current_level_percent }}%"></span></div>
-                            <small data-i18n="remaining">Remaining</small>
-                            <b><span data-patient-remaining="{{ patient.id }}">{{ patient.remaining_ml|round|int }}</span> ml</b>
+        <section class="dashboard-toolbar">
+            <div class="stepper dashboard-stepper">
+                <div class="step done"><b>1</b><span data-i18n="welcome">Welcome</span></div>
+                <div class="step done"><b>2</b><span data-i18n="monitorSelection">Monitor Selection</span></div>
+                <div class="step active"><b>3</b><span data-i18n="dashboard">Dashboard</span></div>
+            </div>
+            <div class="toolbar-actions">
+                <div class="live-card"><span class="live-dot"></span><strong data-i18n="live">LIVE</strong><small data-i18n="liveDesc">Data updating in real-time</small></div>
+                <div class="time-card"><i class="bi bi-clock"></i><span><strong id="localClock">--:--:--</strong><small id="localDate">--</small></span></div>
+                <a class="excel-btn" href="{{ url_for('export_excel') }}"><i class="bi bi-file-earmark-excel-fill"></i><span data-i18n="exportExcel">Export Excel</span></a>
+            </div>
+        </section>
+
+        <section class="dashboard-content">
+            <section class="dashboard-section active" id="section-dashboard" data-section="dashboard">
+                <div class="section-heading hero-heading">
+                    <div>
+                        <h1 data-i18n="dashboardTitle">Dashboard</h1>
+                        <p data-i18n="dashboardSubtitle">Real-time overview for the active IV monitoring system.</p>
+                    </div>
+                    <div class="quick-stats">
+                        <span><i class="bi bi-person-badge"></i><b data-i18n="monitoredBy">Monitored by</b><strong>{{ session.get('monitor_name') }}</strong></span>
+                        <span><i class="bi bi-database-check"></i><b data-i18n="connectionStatus">Connection Status</b><strong data-i18n="connected">Connected</strong></span>
+                    </div>
+                </div>
+
+                <div class="patient-summary-grid">
+                    {% for patient in patients %}
+                    <article class="summary-card" data-patient-card="{{ patient.id }}">
+                        <div class="summary-head">
+                            <div><span class="mini-label"><span data-i18n="patient">Patient</span> {{ loop.index }}</span><h2 data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</h2><p><span data-patient-code="{{ patient.id }}">PT{{ '%03d'|format(patient.id) }}</span> · <span data-patient-ward="{{ patient.id }}">{{ patient.ward_number or 'Ward 3A' }}</span> · <span data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</span></p></div>
+                            <button class="icon-btn" data-bs-toggle="modal" data-bs-target="#patientModal{{ patient.id }}" title="Edit patient"><i class="bi bi-pencil"></i></button>
                         </div>
-                        <div class="metric-list">
-                            <p><span>💧</span><small data-i18n="dripRate">Drip Rate</small><b><span data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate|round|int }}</span> <em data-i18n="dropsMin">drops/min</em></b></p>
-                            <p><span>≋</span><small data-i18n="flowRate">Flow Rate</small><b><span data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr|round|int }}</span> ml/hr</b></p>
-                            <p><span>⌁</span><small data-i18n="status">Status</small><b class="status-pill {{ patient.current_status|lower }}" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</b></p>
+                        <div class="summary-body">
+                            <div class="bag-mini">{% include 'partials_iv_bag.html' ignore missing %}</div>
+                            <div class="level-block">
+                                <span data-i18n="ivLevel">IV Level</span>
+                                <strong class="level-value status-text-{{ patient.current_status|lower }}" data-patient-level="{{ patient.id }}">{{ patient.current_level_percent|round(0)|int }}%</strong>
+                                <div class="progress-rail"><b data-patient-progress="{{ patient.id }}" style="width: {{ patient.current_level_percent }}%"></b></div>
+                                <small data-i18n="remaining">Remaining</small>
+                                <em data-patient-weight="{{ patient.id }}">{{ patient.current_weight_g|round(0)|int }} g</em>
+                            </div>
+                            <div class="metric-stack">
+                                <div><i class="bi bi-droplet-half"></i><span data-i18n="dripRate">Drip Rate</span><strong><span data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate or 0 }}</span> <small data-i18n="dropsPerMin">Drops/min</small></strong></div>
+                                <div><i class="bi bi-water"></i><span data-i18n="flowRate">Flow Rate</span><strong><span data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr or 0 }}</span> ml/hr</strong></div>
+                                <div><i class="bi bi-shield-check"></i><span data-i18n="status">Status</span><b class="status-pill status-{{ patient.current_status|lower }}" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</b></div>
+                            </div>
                         </div>
+                        <div class="last-row"><span data-i18n="lastUpdate">Last Update</span><strong data-patient-updated="{{ patient.id }}">{{ patient.last_update_time.strftime('%I:%M:%S %p') }}</strong><em><span class="live-dot"></span> <span data-i18n="live">Live</span></em></div>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                <article class="drop-chart-panel large-chart-card">
+                    <div class="panel-heading">
+                        <div><h3 data-i18n="dropComparison">Drop Rate Comparison</h3><p data-i18n="allDropTrend">All Drop Trend</p></div>
+                        <div class="chart-controls"><span><span class="live-dot"></span> <span data-i18n="live">Live</span></span><button type="button" class="soft-select" data-i18n="last60Minutes">Last 60 minutes</button></div>
                     </div>
-                    <footer><span><b data-i18n="lastUpdate">Last Update</b>: <i data-patient-updated="{{ patient.id }}">{{ patient.last_update_time }}</i></span><em><span class="live-dot small"></span> Live</em></footer>
+                    <canvas id="dropComparisonChart" height="190"></canvas>
                 </article>
-                {% endfor %}
-            </div>
+            </section>
 
-            <div class="chart-pair">
-                {% for patient in patients %}
-                <article class="chart-card"><header><b><span data-i18n="weightTrend">IV Weight vs Time</span> (<span data-patient-chart-name="{{ patient.id }}">{{ patient.patient_name }}</span>)</b><em><span class="live-dot small"></span>Live</em></header><div class="svg-chart" data-chart="weight" data-patient-id="{{ patient.id }}"></div></article>
-                {% endfor %}
-            </div>
-            <article class="chart-card wide"><header><b data-i18n="dropComparison">Drop Rate Comparison</b><div><em><span class="live-dot small"></span>Live</em><button data-i18n="last60Minutes">Last 60 minutes</button></div></header><div class="svg-chart tall" data-chart="drop-comparison"></div></article>
-
-            <div class="right-panels-inflow">
-                <article class="side-panel notification-panel"><header><b data-i18n="notifications">Notifications</b><a href="#alerts" data-open-section="alerts" data-i18n="viewAll">View All</a></header><div data-notification-list></div></article>
-                <article class="side-panel system-panel"><header><b data-i18n="systemInfo">System Info</b></header><p><span data-i18n="dataSource">Data Source</span><b>{{ data.system.data_source }}</b></p><p><span data-i18n="connectionStatus">Connection Status</span><b class="connected">● <span data-i18n="connected">Connected</span></b></p><p><span>Uptime</span><b>{{ data.system.uptime }}</b></p><p><span data-i18n="lastBackup">Last Backup</span><b>{{ data.system.last_backup }}</b></p></article>
-            </div>
-        </section>
-
-        <section class="app-section" id="section-monitors">
-            <div class="page-heading"><h1 data-i18n="monitorsTitle">Monitors</h1><p data-i18n="monitorsSubtitle">Live IV metrics and charts are updated in real time.</p></div>
-            <div class="monitor-toolbar"><span><i class="live-dot"></i><b data-i18n="live">LIVE</b><small data-i18n="liveDesc">Data updating in real-time</small></span><span>◷ <b id="monitorClock">{{ data.server_time }}</b> | <small id="monitorDate">{{ data.server_date }}</small></span><div><button class="active">Patient A</button><button>Patient B</button></div><button class="refresh-button" data-refresh-now>↻ <span data-i18n="refresh">Refresh</span></button></div>
-            <div class="monitor-panels">
-                {% for patient in patients %}
-                <article class="monitor-panel" data-monitor-panel="{{ patient.id }}">
-                    <header><div><h2 data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</h2><p><span data-patient-code="{{ patient.id }}">{{ patient.patient_code }}</span> <i>|</i> <span data-patient-ward="{{ patient.id }}">{{ patient.ward_number }}</span> <i>|</i> <span data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</span></p></div><em><span data-i18n="lastUpdate">Last Update</span>: <b data-patient-updated="{{ patient.id }}">{{ patient.last_update_time }}</b> <span class="live-dot small"></span> Live</em></header>
-                    <div class="monitor-metrics">
-                        {% with level=patient.current_level_percent, color=('#ff862e' if patient.current_status!='Normal' else '#0797a5'), bag_class='monitor-bag' %}{% include '_iv_bag.html' %}{% endwith %}
-                        <div class="big-level"><small data-i18n="ivLevel">IV Level</small><strong data-patient-level="{{ patient.id }}">{{ patient.current_level_percent|round|int }}%</strong><div class="progress"><span data-patient-progress="{{ patient.id }}" style="width: {{ patient.current_level_percent }}%"></span></div></div>
-                        <div class="kpi"><small data-i18n="remainingVolume">Remaining Volume</small><b><span data-patient-remaining="{{ patient.id }}">{{ patient.remaining_ml|round|int }}</span> ml</b></div>
-                        <div class="kpi"><small data-i18n="totalWeight">TOTAL WEIGHT</small><b><span data-patient-weight="{{ patient.id }}">{{ patient.current_weight_g|round|int }}</span> g</b></div>
-                        <div class="kpi"><small data-i18n="dripRate">Drip Rate</small><b><span data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate|round|int }}</span> <em data-i18n="dropsMin">drops/min</em></b></div>
-                        <div class="kpi"><small data-i18n="flowRate">Flow Rate</small><b><span data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr|round|int }}</span> ml/hr</b></div>
-                        <div class="kpi"><small data-i18n="status">Status</small><b class="status-pill {{ patient.current_status|lower }}" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</b></div>
+            <section class="dashboard-section" id="section-monitors" data-section="monitors">
+                <div class="section-heading monitor-page-heading">
+                    <div>
+                        <h1 data-i18n="monitorPageTitle">Monitors</h1>
+                        <p data-i18n="monitorPageDesc">Real-time monitoring of patient IV infusions.</p>
                     </div>
-                    <div class="monitor-data-grid">
-                        <article class="chart-card compact"><header><b data-i18n="weightVsTime">Weight vs Time (g)</b></header><div class="svg-chart" data-chart="monitor-weight" data-patient-id="{{ patient.id }}"></div></article>
-                        <article class="chart-card compact"><header><b data-i18n="dropRateTrend">Drop Rate Trend</b></header><div class="svg-chart" data-chart="monitor-drop" data-patient-id="{{ patient.id }}"></div></article>
-                        <article class="live-table-card"><header><b data-i18n="liveDataLog">Live Data Log</b><small data-i18n="latestReadings">Latest Readings</small></header><div class="table-scroll"><table><thead><tr><th>Time</th><th>Weight (g)</th><th>Drip</th><th>Flow</th><th>IV %</th></tr></thead><tbody data-live-table="{{ patient.id }}"></tbody></table></div></article>
+                    <div class="monitor-toolbar">
+                        <span><span class="live-dot"></span> <strong data-i18n="live">LIVE</strong></span>
+                        <button type="button" class="soft-select" data-i18n="last60Minutes">Last 60 minutes</button>
                     </div>
+                </div>
+
+                <div class="monitor-summary-grid" id="patients">
+                    {% for patient in patients %}
+                    {% set remaining_fluid = [patient.current_weight_g, 0]|max %}
+                    <article class="monitor-summary-card monitor-accent-{{ loop.index }}" data-patient-card="{{ patient.id }}">
+                        <div class="monitor-card-head">
+                            <div>
+                                <span class="mini-label"><span data-i18n="patient">Patient</span> {{ loop.index }}</span>
+                                <h2 data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</h2>
+                                <p><span data-patient-code="{{ patient.id }}">PT{{ '%03d'|format(patient.id) }}</span> <i></i> <span data-patient-ward="{{ patient.id }}">{{ patient.ward_number or 'Ward 3A' }}</span> <i></i> <span data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</span></p>
+                            </div>
+                            <div class="monitor-card-actions">
+                                <span class="live-status"><span class="live-dot"></span> <span data-i18n="live">Live</span></span>
+                                <button class="icon-btn" data-bs-toggle="modal" data-bs-target="#patientModal{{ patient.id }}" title="Edit patient"><i class="bi bi-pencil"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="monitor-card-body">
+                            <div class="monitor-bag-wrap">
+                                <div class="bag-mini monitor-bag">{% include 'partials_iv_bag.html' ignore missing %}</div>
+                            </div>
+
+                            <div class="monitor-values">
+                                <div class="weight-grid">
+                                    <div><span data-i18n="initialWeight">Initial Weight</span><strong data-patient-full-weight="{{ patient.id }}">{{ patient.full_weight_g|round(0)|int }} g</strong></div>
+                                    <div><span data-i18n="currentWeight">Current Weight</span><strong data-patient-current-weight="{{ patient.id }}">{{ [patient.current_weight_g, 0]|max|round(0)|int }} g</strong></div>
+                                    <div><span data-i18n="remainingFluid">Remaining Fluid</span><strong data-patient-remaining-weight="{{ patient.id }}">{{ remaining_fluid|round(0)|int }} g</strong></div>
+                                    <div><span data-i18n="emptyWeightShort">Empty Bag</span><strong data-patient-empty-weight="{{ patient.id }}">{{ patient.empty_weight_g|round(0)|int }} g</strong></div>
+                                </div>
+
+                                <div class="level-strip">
+                                    <div>
+                                        <span data-i18n="ivLevel">IV Level</span>
+                                        <strong class="level-value status-text-{{ patient.current_status|lower }}" data-patient-level="{{ patient.id }}">{{ patient.current_level_percent|round(0)|int }}%</strong>
+                                    </div>
+                                    <div class="progress-rail"><b data-patient-progress="{{ patient.id }}" style="width: {{ patient.current_level_percent }}%"></b></div>
+                                </div>
+                            </div>
+
+                            <div class="monitor-vitals">
+                                <div><i class="bi bi-droplet-half"></i><span data-i18n="dripRate">Drip Rate</span><strong data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate or 0 }}</strong><small data-i18n="dropsPerMin">Drops/min</small></div>
+                                <div><i class="bi bi-water"></i><span data-i18n="flowRate">Flow Rate</span><strong data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr or 0 }}</strong><small>ml/hr</small></div>
+                                <div><i class="bi bi-shield-check"></i><span data-i18n="status">Status</span><b class="status-pill status-{{ patient.current_status|lower }}" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</b></div>
+                            </div>
+                        </div>
+
+                        <div class="monitor-last-update">
+                            <i class="bi bi-clock"></i>
+                            <span data-i18n="lastUpdate">Last Update</span>
+                            <strong data-patient-updated="{{ patient.id }}">{{ patient.last_update_time.strftime('%d/%m/%Y, %I:%M:%S %p') }}</strong>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                <div class="monitor-chart-grid">
+                    {% for patient in patients %}
+                    <article class="monitor-wide-chart monitor-accent-{{ loop.index }}">
+                        <div class="chart-title enhanced-chart-title">
+                            <strong><span data-i18n="weightTrend">IV Weight vs Time</span> (<span data-patient-chart-name="{{ patient.id }}">{{ patient.patient_name }}</span>)</strong>
+                            <span><span class="live-dot"></span> <span data-i18n="live">Live</span></span>
+                        </div>
+                        <canvas id="weightChart{{ patient.id }}"></canvas>
+                    </article>
+                    {% endfor %}
+                </div>
+
+                <article class="drop-chart-panel monitor-drop-panel">
+                    <div class="panel-heading">
+                        <div><h3 data-i18n="dropComparison">Drop Rate Comparison</h3><p data-i18n="allDropTrend">All Drop Trend</p></div>
+                        <div class="chart-controls"><button type="button" class="soft-select" data-i18n="last60Minutes">Last 60 minutes</button><span><span class="live-dot"></span> <span data-i18n="live">Live</span></span></div>
+                    </div>
+                    <canvas id="monitorDropComparisonChart"></canvas>
                 </article>
-                {% endfor %}
-            </div>
+            </section>
+
+            <section class="dashboard-section" id="section-patients" data-section="patients">
+                <div class="section-heading"><h1 data-i18n="patients">Patients</h1><p data-i18n="patientOverviewDesc">Current IV level, remaining weight, drip rate and alert status for both patients.</p></div>
+                <div class="patient-table-card">
+                    <table class="patient-table">
+                        <thead><tr><th data-i18n="patientName">Patient Name</th><th data-i18n="wardNumber">Ward</th><th data-i18n="bedNumber">Bed Number</th><th data-i18n="ivLevel">IV Level</th><th data-i18n="dripRate">Drip Rate</th><th data-i18n="status">Status</th><th data-i18n="edit">Edit</th></tr></thead>
+                        <tbody>
+                            {% for patient in patients %}
+                            <tr>
+                                <td><strong data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</strong><small data-patient-code="{{ patient.id }}">PT{{ '%03d'|format(patient.id) }}</small></td>
+                                <td data-patient-ward="{{ patient.id }}">{{ patient.ward_number or 'Ward 3A' }}</td>
+                                <td data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</td>
+                                <td data-patient-level="{{ patient.id }}">{{ patient.current_level_percent|round(0)|int }}%</td>
+                                <td><span data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate or 0 }}</span> <span data-i18n="dropsPerMin">Drops/min</span></td>
+                                <td><b class="status-pill status-{{ patient.current_status|lower }}" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</b></td>
+                                <td><button class="icon-btn" data-bs-toggle="modal" data-bs-target="#patientModal{{ patient.id }}"><i class="bi bi-pencil"></i></button></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="dashboard-section" id="section-alerts" data-section="alerts">
+                <div class="section-heading"><h1 data-i18n="notifications">Notifications</h1><p data-i18n="alerts">Alerts</p></div>
+                <article class="notification-card full-card">
+                    <div class="panel-heading compact-heading"><h3 data-i18n="notifications">Notifications</h3><span class="red-badge" id="alertCount">{{ alerts|length }}</span></div>
+                    <div id="notificationList" class="notification-list"></div>
+                </article>
+            </section>
+
+            <section class="dashboard-section" id="section-reports" data-section="reports">
+                <div class="section-heading"><h1 data-i18n="reportTitle">Reports & Data Export</h1><p data-i18n="reportDesc">Download current patient status, historical readings and alert logs as an Excel file.</p></div>
+                <div class="report-grid">
+                    <a class="report-download-card" href="{{ url_for('export_excel') }}"><i class="bi bi-file-earmark-excel-fill"></i><strong data-i18n="downloadExcel">Download Excel Report</strong><span data-i18n="reportIncludes">The report includes current status, historical readings and alerts.</span></a>
+                    <div class="report-mini-card"><i class="bi bi-person-lines-fill"></i><strong data-i18n="patientRecords">Patient Records</strong><span>2</span></div>
+                    <div class="report-mini-card"><i class="bi bi-graph-up"></i><strong data-i18n="historicalReadings">Historical Readings</strong><span>Live</span></div>
+                    <div class="report-mini-card"><i class="bi bi-bell-fill"></i><strong data-i18n="alertLogs">Alert Logs</strong><span id="reportAlertCount">{{ alerts|length }}</span></div>
+                </div>
+            </section>
+
+            <section class="dashboard-section" id="section-settings" data-section="settings">
+                <div class="section-heading"><h1 data-i18n="patientSettings">Patient Settings</h1><p data-i18n="settingsDesc">Update patient names, ward, bed number, calibration weight, or manual test readings.</p></div>
+                <div class="settings-grid">
+                    {% for patient in patients %}
+                    <div class="settings-card">
+                        <h4 data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</h4>
+                        <form action="{{ url_for('update_patient', patient_id=patient.id) }}" method="post" class="settings-form">
+                            <label><span data-i18n="patientName">Patient Name</span><input type="text" name="patient_name" value="{{ patient.patient_name }}"></label>
+                            <label><span data-i18n="wardNumber">Ward</span><input type="text" name="ward_number" value="{{ patient.ward_number or 'Ward 3A' }}"></label>
+                            <label><span data-i18n="bedNumber">Bed Number</span><input type="text" name="bed_number" value="{{ patient.bed_number }}"></label>
+                            <label><span data-i18n="fullWeight">Full IV Bag Weight (g)</span><input type="number" step="0.01" name="full_weight_g" value="{{ patient.full_weight_g }}"></label>
+                            <label><span data-i18n="emptyWeight">Empty Bag Weight (g)</span><input type="number" step="0.01" name="empty_weight_g" value="{{ patient.empty_weight_g }}"></label>
+                            <button type="submit"><i class="bi bi-save"></i> <span data-i18n="saveChanges">Save Changes</span></button>
+                        </form>
+                        <form action="{{ url_for('manual_reading', patient_id=patient.id) }}" method="post" class="manual-form">
+                            <strong data-i18n="manualUpdate">Manual Test Update</strong>
+                            <div><input type="number" step="0.01" name="weight_g" placeholder="Weight g" required><input type="number" step="0.01" name="drops_per_min" placeholder="Drops/min"></div>
+                            <button type="submit" data-i18n="submitReading">Submit Reading</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <article class="system-info-card settings-system-card">
+                    <h3 data-i18n="systemInfo">System Info</h3>
+                    <div class="info-line"><i class="bi bi-cloud-check"></i><span data-i18n="dataSource">Data Source</span><strong id="dataSource">PostgreSQL / Render</strong></div>
+                    <div class="info-line"><i class="bi bi-database-check"></i><span data-i18n="connectionStatus">Connection Status</span><strong class="connected"><span class="live-dot"></span> <span data-i18n="connected">Connected</span></strong></div>
+                    <div class="info-line"><i class="bi bi-person-badge"></i><span data-i18n="monitoredBy">Monitored by</span><strong>{{ session.get('monitor_name') }}</strong></div>
+                    <div class="info-note" data-i18n="cloudNote">All data is stored securely in the cloud.</div>
+                </article>
+            </section>
         </section>
 
-        <section class="app-section" id="section-patients">
-            <div class="page-heading"><h1 data-i18n="patientsTitle">Patients</h1><p data-i18n="patientsSubtitle">Edit patient name, ward, bed and calibration values.</p></div>
-            <div class="patient-settings-grid">
-                {% for patient in patients %}
-                <form class="settings-card" action="{{ url_for('update_patient', patient_id=patient.id) }}" method="post">
-                    <h2>{{ patient.patient_name }}</h2>
-                    <label><span data-i18n="patientName">Patient Name</span><input name="patient_name" value="{{ patient.patient_name }}"></label>
-                    <label><span data-i18n="patientCode">Patient ID</span><input name="patient_code" value="{{ patient.patient_code }}"></label>
-                    <label><span data-i18n="ward">Ward</span><input name="ward_number" value="{{ patient.ward_number }}"></label>
-                    <label><span data-i18n="bed">Bed</span><input name="bed_number" value="{{ patient.bed_number }}"></label>
-                    <label><span data-i18n="fullWeight">Full Weight (g)</span><input name="full_weight_g" type="number" step="0.1" value="{{ patient.full_weight_g }}"></label>
-                    <label><span data-i18n="emptyWeight">Empty Weight (g)</span><input name="empty_weight_g" type="number" step="0.1" value="{{ patient.empty_weight_g }}"></label>
-                    <button class="primary-btn" type="submit" data-i18n="saveChanges">Save Changes</button>
-                </form>
-                <form class="settings-card manual-card" action="{{ url_for('manual_reading', patient_id=patient.id) }}" method="post">
-                    <h2><span data-i18n="manualTest">Manual Test</span> - {{ patient.patient_name }}</h2>
-                    <label><span data-i18n="totalWeight">TOTAL WEIGHT</span><input name="weight_g" type="number" step="0.1" placeholder="540"></label>
-                    <label><span data-i18n="dripRate">Drip Rate</span><input name="drops_per_min" type="number" step="0.1" placeholder="24"></label>
-                    <button class="outline-btn" type="submit" data-i18n="submitReading">Submit Reading</button>
-                </form>
-                {% endfor %}
-            </div>
-        </section>
-
-        <section class="app-section" id="section-alerts">
-            <div class="page-heading"><h1 data-i18n="alertsCenter">Alerts Center</h1><p data-i18n="alertsSubtitle">Displays low-level, nearing-empty, and abnormal IV notifications for monitored patients.</p></div>
-            <div class="summary-cards"><article><span>⚠</span><b data-critical-count>2</b><small data-i18n="criticalAlerts">Critical Alerts</small></article><article><span>🔔</span><b data-warning-count>4</b><small data-i18n="warningAlerts">Warning Alerts</small></article><article><span>✓</span><b data-resolved-count>12</b><small data-i18n="resolvedAlerts">Resolved Alerts</small></article></div>
-            <div class="filter-bar"><button class="active">All</button><button>Patient A</button><button>Patient B</button><button>Critical</button><button>Warning</button><button>Resolved</button><button>Last 24 Hours</button></div>
-            <div class="alerts-layout"><article class="alerts-table"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Patient</th><th>Alert Type</th><th>Message</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead><tbody data-alert-table></tbody></table></div></article><aside class="alert-detail" data-alert-detail></aside></div>
-        </section>
-
-        <section class="app-section" id="section-reports">
-            <div class="page-heading"><h1 data-i18n="reportsTitle">Reports</h1><p data-i18n="reportsSubtitle">Generate comprehensive IV monitoring summaries and downloadable records.</p></div>
-            <div class="report-controls"><label><span data-i18n="dateRange">Date Range</span><button>22 May 2024 00:00 – 22 May 2024 23:59 ▾</button></label><label><span data-i18n="patient">Patient</span><button data-i18n="allPatients">All Patients</button></label><label><span data-i18n="reportType">Report Type</span><button>IV Monitoring Summary ▾</button></label><a class="excel-btn" href="{{ url_for('export_excel') }}">▣ <b data-i18n="exportExcel">Export Excel</b></a><button class="primary-btn" data-i18n="generateReport">Generate Report</button></div>
-            <div class="report-kpis"><article><span>▤</span><b data-total-records>96</b><small data-i18n="totalRecords">Total Records</small></article><article><span>💧</span><b data-average-level>45%</b><small data-i18n="averageLevel">Average IV Level</small></article><article><span>🔔</span><b data-total-alerts>6</b><small data-i18n="totalAlerts">Total Alerts</small></article><article><span>≋</span><b data-average-flow>46 ml/hr</b><small data-i18n="averageFlow">Average Flow Rate</small></article></div>
-            <div class="reports-layout"><article class="reports-table"><div class="table-scroll"><table><thead><tr><th>Date</th><th>Time</th><th>Patient</th><th>Total Weight</th><th>IV Level</th><th>Drip Rate</th><th>Flow Rate</th><th>Status</th><th>Export</th></tr></thead><tbody data-report-table></tbody></table></div></article><aside class="recent-export"><h3 data-i18n="recentExports">Recent Exports</h3><p>▣ IV Monitoring Summary <b>24 KB</b></p><p>▣ Patient A - Daily Report <b>18 KB</b></p><p>▣ Patient B - Daily Report <b>17 KB</b></p></aside></div>
-            <article class="chart-card wide"><header><b data-i18n="dailySummary">Daily IV Monitoring Summary</b></header><div class="svg-chart tall" data-chart="daily-summary"></div></article>
-        </section>
-
-        <section class="app-section" id="section-settings">
-            <div class="page-heading"><h1 data-i18n="settingsTitle">Settings</h1><p data-i18n="settingsSubtitle">Manage language, notification preferences, cloud connection, user accounts, and system parameters.</p></div>
-            <div class="settings-layout">
-                <article class="settings-card wide-card"><h2 data-i18n="language">Language</h2><p data-i18n="languageNote">Choose your preferred language. The interface will be displayed fully in the selected language.</p><div class="language-cards"><button data-set-lang="ms"><b>Bahasa Melayu (BM)</b><small>Antara muka akan dipaparkan sepenuhnya dalam Bahasa Melayu.</small></button><button data-set-lang="en"><b>English (EN)</b><small>The interface will be displayed fully in English.</small></button></div></article>
-                <article class="settings-card"><h2 data-i18n="notifications">Notifications</h2><div class="toggle-list"><p>Low IV Level Alerts <span class="switch on"></span></p><p>Nearing Empty Alerts <span class="switch on"></span></p><p>Sound Alerts <span class="switch on"></span></p><p>Email Notifications <span class="switch"></span></p><p>On-screen Notifications <span class="switch on"></span></p></div></article>
-                <article class="settings-card"><h2 data-i18n="cloudDatabase">Cloud & Database</h2><p><span data-i18n="dataSource">Data Source</span><b>{{ data.system.data_source }}</b></p><p><span data-i18n="connectionStatus">Connection Status</span><b class="connected">● Connected</b></p><p><span>Sync Interval</span><button>5 minutes ▾</button></p><p><span data-i18n="lastBackup">Last Backup</span><b>{{ data.system.last_backup }}</b></p></article>
-                <article class="settings-card"><h2 data-i18n="systemPreferences">System Preferences</h2><p><span>Time Format</span><button>12-hour (10:24 AM) ▾</button></p><p><span>Refresh Interval</span><button>5 seconds ▾</button></p><p><span>Mobile View</span><span class="switch on"></span></p><p><span>Export Defaults</span><button>Excel (.xlsx) ▾</button></p></article>
-                <article class="settings-card user-management"><h2 data-i18n="userManagement">User Management</h2><div class="mini-table"><p><b>Fariz</b><span>Administrator</span><button>Manage</button></p><p><b>Hareny</b><span>Staff</span><button>Manage</button></p><p><b>Madam Ku Lee Chin</b><span>Viewer</span><button>Manage</button></p></div></article>
-            </div>
-            <div class="settings-actions"><button class="outline-btn" data-i18n="resetDefault">Reset to Defaults</button><button class="primary-btn" data-i18n="saveChanges">Save Changes</button></div>
-        </section>
+        <nav class="mobile-nav">
+            <button class="active" type="button" data-section-target="dashboard"><i class="bi bi-grid-fill"></i><span data-i18n="dashboard">Dashboard</span></button>
+            <button type="button" data-section-target="monitors"><i class="bi bi-pc-display"></i><span data-i18n="monitors">Monitors</span></button>
+            <button type="button" data-section-target="alerts"><i class="bi bi-bell"></i><span data-i18n="alerts">Alerts</span><b id="mobileAlertBadge">{{ alerts|length }}</b></button>
+            <button type="button" data-section-target="reports"><i class="bi bi-file-earmark-text"></i><span data-i18n="reports">Reports</span></button>
+            <button type="button" data-section-target="settings"><i class="bi bi-three-dots"></i><span data-i18n="mobileMore">More</span></button>
+        </nav>
     </main>
-    {% include '_footer.html' %}
 </div>
-<script id="initialData" type="application/json">{{ data|tojson }}</script>
+
+{% for patient in patients %}
+<div class="modal fade" id="patientModal{{ patient.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-5 border-0">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title"><span data-i18n="edit">Edit</span> {{ patient.patient_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form action="{{ url_for('update_patient', patient_id=patient.id) }}" method="post" class="settings-form modal-form">
+                    <label><span data-i18n="patientName">Patient Name</span><input type="text" name="patient_name" value="{{ patient.patient_name }}"></label>
+                    <label><span data-i18n="wardNumber">Ward</span><input type="text" name="ward_number" value="{{ patient.ward_number or 'Ward 3A' }}"></label>
+                    <label><span data-i18n="bedNumber">Bed Number</span><input type="text" name="bed_number" value="{{ patient.bed_number }}"></label>
+                    <label><span data-i18n="fullWeight">Full IV Bag Weight (g)</span><input type="number" step="0.01" name="full_weight_g" value="{{ patient.full_weight_g }}"></label>
+                    <label><span data-i18n="emptyWeight">Empty Bag Weight (g)</span><input type="number" step="0.01" name="empty_weight_g" value="{{ patient.empty_weight_g }}"></label>
+                    <button type="submit"><i class="bi bi-save"></i> <span data-i18n="saveChanges">Save Changes</span></button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.INITIAL_DASHBOARD_DATA = {{ dashboard_data|tojson }};
+</script>
 {% endblock %}

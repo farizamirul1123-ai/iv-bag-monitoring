@@ -1,43 +1,68 @@
 {% extends 'base.html' %}
-{% block title %}Select Monitor | IV Monitoring{% endblock %}
+{% block title %}Select Monitor{% endblock %}
 {% block content %}
-<div class="public-shell select-shell">
-    {% include '_header.html' %}
-    <main class="selection-page reveal-page">
-        <section class="selection-content">
+<div class="site-shell selection-page">
+    <header class="brand-header">
+        <div class="brand-logos">
+            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik Seberang Perai" class="brand-logo psp-logo">
+            <span class="logo-divider"></span>
+            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="brand-logo kpm-logo">
+        </div>
+        <a class="system-mark" href="{{ url_for('index') }}">
+            <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
+            <span>
+                <strong>IV Monitoring System</strong>
+                <small data-i18n="systemSubtitle">Sistem Pemantauan IV Pintar</small>
+            </span>
+        </a>
+        {% include '_language_switch.html' %}
+    </header>
+
+    <main class="selection-layout">
+        <section class="selection-main">
             <div class="stepper">
-                <div class="done"><b>1</b><span data-i18n="welcome">Welcome</span><small data-i18n="welcomeMs">Selamat Datang</small></div>
-                <i></i>
-                <div class="active"><b>2</b><span data-i18n="monitorSelection">Monitor Selection</span><small data-i18n="monitorSelectionMs">Pilih Monitor</small></div>
-                <i></i>
-                <div><b>3</b><span data-i18n="dashboard">Dashboard</span><small data-i18n="dashboardMs">Papan Pemuka</small></div>
+                <div class="step done"><b>1</b><span data-i18n="welcome">Welcome</span></div>
+                <div class="step active"><b>2</b><span data-i18n="monitorSelection">Monitor Selection</span></div>
+                <div class="step"><b>3</b><span data-i18n="dashboard">Dashboard</span></div>
             </div>
-            <h1 data-i18n="selectMonitorTitle">Select Monitor</h1>
-            <span class="accent-line"></span>
-            <p class="lead" data-i18n="chooseMonitor">Choose who will monitor the IV system. You will be redirected to their dashboard.</p>
-            {% with messages = get_flashed_messages() %}{% if messages %}<div class="flash">{{ messages[0] }}</div>{% endif %}{% endwith %}
-            <form action="{{ url_for('login') }}" method="post" class="monitor-cards" id="monitorForm">
+
+            <h1 data-i18n="selectMonitor">Select Monitor</h1>
+            <p class="lead-text" data-i18n="chooseMonitor">Choose who will monitor the IV system. You will be redirected to the real-time dashboard.</p>
+
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}<div class="alert alert-warning rounded-4">{{ messages[0] }}</div>{% endif %}
+            {% endwith %}
+
+            <form method="post" action="{{ url_for('login') }}" class="monitor-card-grid">
                 {% set roles = {'Fariz':'monitorSupervisor','Hareny':'projectTeam','Madam Ku Lee Chin':'monitorSupervisor'} %}
-                {% set avatars = {'Fariz':'👨‍💼','Hareny':'🧕','Madam Ku Lee Chin':'👩‍🏫'} %}
+                {% set icons = {'Fariz':'person-badge','Hareny':'person-hearts','Madam Ku Lee Chin':'person-check'} %}
                 {% for monitor in monitor_options %}
-                <button class="monitor-card" type="submit" name="monitor_name" value="{{ monitor }}">
-                    <span class="user-badge">♙</span>
-                    <span class="avatar avatar-{{ loop.index }}">{{ avatars[monitor] }}</span>
-                    <b>{{ monitor }}</b>
-                    <small data-i18n="{{ roles[monitor] }}">Monitor Supervisor</small>
-                    <em><span data-i18n="openDashboard">Open Dashboard</span> <strong>→</strong></em>
-                </button>
+                <label class="monitor-select-card">
+                    <input type="radio" name="monitor_name" value="{{ monitor }}" {% if loop.first %}checked{% endif %}>
+                    <span class="monitor-card-body">
+                        <span class="profile-avatar avatar-{{ loop.index }}"><i class="bi bi-{{ icons[monitor] }}"></i></span>
+                        <strong>{{ monitor }}</strong>
+                        <small data-i18n="{{ roles[monitor] }}">{{ roles[monitor] }}</small>
+                        <span class="open-dashboard"><i class="bi bi-graph-up-arrow"></i> <span data-i18n="openDashboard">Open Dashboard</span> <i class="bi bi-arrow-right"></i></span>
+                    </span>
+                </label>
                 {% endfor %}
+                <button type="submit" class="d-none" id="hiddenSubmit" data-i18n="openDashboard">Open Dashboard</button>
             </form>
         </section>
-        <aside class="selection-hospital">
-            <div class="hospital-bg"></div>
-            <div class="iv-stand"></div>
-            {% with level=70, color='#0b9aaa', bag_class='selection-bag' %}{% include '_iv_bag.html' %}{% endwith %}
-            <div class="bed-monitor"><div class="wave green"></div><div class="wave cyan"></div><div class="wave amber"></div><strong>120</strong><span>98</span><small>18</small></div>
-            <div class="floating-info select-info"><b>i</b><span data-i18n="selectInfo">Selecting a monitor will open their real-time dashboard.</span></div>
+
+        <aside class="selection-visual">
+            <div class="mini-hospital-screen">
+                {% include 'partials_iv_bag.html' ignore missing %}
+                <div class="monitor-device">
+                    <div class="screen-line green"></div><div class="screen-line cyan"></div><div class="screen-line amber"></div>
+                    <b data-i18n="live">LIVE</b><small>IV Data</small>
+                </div>
+            </div>
+            <div class="info-bubble selection-info"><i class="bi bi-info-circle-fill"></i><span data-i18n="chooseMonitor">Select a monitor to access the real-time dashboard.</span></div>
         </aside>
     </main>
-    {% include '_footer.html' %}
+
+    <footer class="site-footer"><i class="bi bi-shield-plus"></i> <b data-i18n="finalYearProject">Final Year Project Dashboard</b> <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
 </div>
 {% endblock %}
