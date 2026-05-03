@@ -12,32 +12,29 @@
             <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
             <span>
                 <strong>IV Monitoring System</strong>
-                <small>Sistem Pemantauan IV Pintar</small>
+                <small data-i18n="systemSubtitle">Sistem Pemantauan IV Pintar</small>
             </span>
         </a>
-        <form method="post" action="{{ url_for('set_language', lang='ms' if active_language == 'en' else 'en') }}" class="language-form">
-            <input type="hidden" name="next_url" value="{{ request.path }}">
-            <button class="language-toggle" type="submit">BM <span></span> EN</button>
-        </form>
+        {% include '_language_switch.html' %}
     </header>
 
     <main class="selection-layout">
         <section class="selection-main">
             <div class="stepper">
-                <div class="step done"><b>1</b><span>Welcome<small>Selamat Datang</small></span></div>
-                <div class="step active"><b>2</b><span>Monitor Selection<small>Pilih Monitor</small></span></div>
-                <div class="step"><b>3</b><span>Dashboard<small>Papan Pemuka</small></span></div>
+                <div class="step done"><b>1</b><span data-i18n="welcome">Welcome</span></div>
+                <div class="step active"><b>2</b><span data-i18n="monitorSelection">Monitor Selection</span></div>
+                <div class="step"><b>3</b><span data-i18n="dashboard">Dashboard</span></div>
             </div>
 
-            <h1>Select Monitor / Pilih Monitor</h1>
-            <p class="lead-text">Choose who will monitor the IV system. You will be redirected to the real-time dashboard.<br><em>Pilih pemantau yang akan memantau sistem IV. Anda akan diarahkan ke dashboard masa nyata.</em></p>
+            <h1 data-i18n="selectMonitor">Select Monitor</h1>
+            <p class="lead-text" data-i18n="chooseMonitor">Choose who will monitor the IV system. You will be redirected to the real-time dashboard.</p>
 
             {% with messages = get_flashed_messages() %}
                 {% if messages %}<div class="alert alert-warning rounded-4">{{ messages[0] }}</div>{% endif %}
             {% endwith %}
 
             <form method="post" action="{{ url_for('login') }}" class="monitor-card-grid">
-                {% set roles = {'Fariz':'Monitor Supervisor','Hareny':'Project Team','Madam Ku Lee Chin':'Monitor Supervisor'} %}
+                {% set roles = {'Fariz':'monitorSupervisor','Hareny':'projectTeam','Madam Ku Lee Chin':'monitorSupervisor'} %}
                 {% set icons = {'Fariz':'person-badge','Hareny':'person-hearts','Madam Ku Lee Chin':'person-check'} %}
                 {% for monitor in monitor_options %}
                 <label class="monitor-select-card">
@@ -45,12 +42,12 @@
                     <span class="monitor-card-body">
                         <span class="profile-avatar avatar-{{ loop.index }}"><i class="bi bi-{{ icons[monitor] }}"></i></span>
                         <strong>{{ monitor }}</strong>
-                        <small>{{ roles[monitor] }}</small>
-                        <span class="open-dashboard"><i class="bi bi-graph-up-arrow"></i> Open Dashboard <i class="bi bi-arrow-right"></i></span>
+                        <small data-i18n="{{ roles[monitor] }}">{{ roles[monitor] }}</small>
+                        <span class="open-dashboard"><i class="bi bi-graph-up-arrow"></i> <span data-i18n="openDashboard">Open Dashboard</span> <i class="bi bi-arrow-right"></i></span>
                     </span>
                 </label>
                 {% endfor %}
-                <button type="submit" class="d-none" id="hiddenSubmit">Open Dashboard</button>
+                <button type="submit" class="d-none" id="hiddenSubmit" data-i18n="openDashboard">Open Dashboard</button>
             </form>
         </section>
 
@@ -59,13 +56,13 @@
                 {% include 'partials_iv_bag.html' ignore missing %}
                 <div class="monitor-device">
                     <div class="screen-line green"></div><div class="screen-line cyan"></div><div class="screen-line amber"></div>
-                    <b>LIVE</b><small>IV Data</small>
+                    <b data-i18n="live">LIVE</b><small>IV Data</small>
                 </div>
             </div>
-            <div class="info-bubble selection-info"><i class="bi bi-info-circle-fill"></i><span>Select a monitor to access the real-time dashboard.<br><em>Pilih pemantau untuk akses dashboard masa nyata.</em></span></div>
+            <div class="info-bubble selection-info"><i class="bi bi-info-circle-fill"></i><span data-i18n="chooseMonitor">Select a monitor to access the real-time dashboard.</span></div>
         </aside>
     </main>
 
-    <footer class="site-footer"><i class="bi bi-shield-plus"></i> Final Year Project Dashboard <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
+    <footer class="site-footer"><i class="bi bi-shield-plus"></i> <b data-i18n="finalYearProject">Final Year Project Dashboard</b> <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
 </div>
 {% endblock %}

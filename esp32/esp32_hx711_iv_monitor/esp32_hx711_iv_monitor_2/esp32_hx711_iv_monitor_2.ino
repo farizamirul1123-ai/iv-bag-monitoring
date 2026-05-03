@@ -17,7 +17,7 @@ const char* API_KEY = "IVMONITOR123";
 
 // Untuk Patient 1 guna 1
 // Untuk Patient 2 guna 2
-const int PATIENT_ID = 1;
+const int PATIENT_ID = 2;
 
 
 // ===============================

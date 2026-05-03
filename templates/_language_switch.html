@@ -1,0 +1,11 @@
+<div class="language-switch" aria-label="Language switch">
+    <form method="post" action="{{ url_for('set_language', lang='ms') }}">
+        <input type="hidden" name="next_url" value="{{ request.full_path if request.query_string else request.path }}">
+        <button type="submit" class="{{ 'active' if active_language == 'ms' else '' }}">BM</button>
+    </form>
+    <span></span>
+    <form method="post" action="{{ url_for('set_language', lang='en') }}">
+        <input type="hidden" name="next_url" value="{{ request.full_path if request.query_string else request.path }}">
+        <button type="submit" class="{{ 'active' if active_language == 'en' else '' }}">BI</button>
+    </form>
+</div>

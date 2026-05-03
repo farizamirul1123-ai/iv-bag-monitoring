@@ -1,262 +1,119 @@
-# IV Bag Monitoring System (Flask + PostgreSQL + ESP32)
+# IV Monitoring System Dashboard
 
-This project is a ready-to-use starter kit for **IV bag level monitoring** using:
-- **Load Cell + HX711**
-- **ESP32**
-- **Flask backend**
-- **PostgreSQL database**
-- **Responsive website dashboard**
-- **Excel export**
-- **BM / EN language toggle**
+Professional Flask + PostgreSQL + ESP32 dashboard for monitoring IV bag level using a load cell and drop detector.
 
-## Features included
+## Main updates in this version
 
-### Landing page
-- IV bag illustration
-- Monitor selection:
-  - Fariz
-  - Ku Lee Chin
-  - Hareny
-- Stores who is monitoring the dashboard
+- New premium landing page with Politeknik Seberang Perai and Kementerian Pendidikan logos.
+- New monitor selection page for Fariz, Hareny, and Madam Ku Lee Chin.
+- New responsive dashboard for 2 patients only.
+- Live cards for IV level, remaining weight, drip rate, flow rate, status, and last update time.
+- Moving Chart.js graphs:
+  - IV Weight vs Time for Patient A
+  - IV Weight vs Time for Patient B
+  - Drop Rate Comparison / All Drop Trend
+- ESP32 `/api/update` now accepts `drop_count`, `drops_per_min`, and `drip_status`.
+- Excel export includes patient status, readings, drop rate, flow rate, and alerts.
+- Mobile-friendly layout with bottom navigation.
+- Auto-refresh every 5 seconds.
+- PostgreSQL/Render ready.
 
-### Dashboard
-- 5 patient slots
-- Only one patient detail shown at a time
-- Click Patient ID 1, 2, 3, 4, or 5 to view its details
-- Editable patient name and bed number
-- Current IV weight
-- IV level (%)
-- Status: Normal / Low / Critical
-- Last update time
-- Professional graph trend (weight and level)
-- Auto refresh selected patient data every 10 seconds
-- Browser alert sound for Low / Critical updates
-- Alert section when IV is low / critical
-- Real-time clock (Local + UTC / world time)
-- Excel export
-- Mobile and laptop friendly UI
-- BM / EN toggle button
-
-### Backend API
-- ESP32 can push data to `/api/update`
-- Data is stored in PostgreSQL (or SQLite for local test)
-
----
-
-## 1. Folder Structure
+## Folder structure
 
 ```bash
 iv_monitoring_project/
-│
 ├── app.py
 ├── requirements.txt
+├── runtime.txt
 ├── render.yaml
 ├── .env.example
-├── README.md
 ├── templates/
 │   ├── base.html
-│   ├── login.html
-│   └── dashboard.html
+│   ├── landing.html
+│   ├── select_monitor.html
+│   ├── dashboard.html
+│   └── partials_iv_bag.html
 ├── static/
 │   ├── css/styles.css
-│   └── js/app.js
+│   ├── js/app.js
+│   └── img/
+│       ├── psp-logo.png
+│       └── kpm-logo.png
 └── esp32/
-    └── esp32_hx711_iv_monitor.ino
+    └── esp32_hx711_iv_monitor/
+        └── esp32_hx711_iv_monitor.ino
 ```
 
----
+## Run locally
 
-## 2. How to run locally
-
-### Step A - Install Python packages
 ```bash
 pip install -r requirements.txt
-```
-
-### Step B - Run Flask app
-```bash
 python app.py
 ```
 
-Open in browser:
-```bash
+Open:
+
+```text
 http://127.0.0.1:5000
 ```
 
----
+## ESP32 data format
 
-## 3. How to use the website
-
-### Landing page
-1. Open website
-2. Choose monitor name
-3. Click **Enter Monitoring Dashboard**
-
-### Dashboard
-- Left side shows **5 patient slots**
-- Click one patient to see only that patient's details
-- You can edit:
-  - Patient name
-  - Bed number
-  - Full bag weight
-  - Empty bag weight
-- You can also test using **manual reading** before connecting ESP32
-
----
-
-## 4. Status Logic
-
-The system calculates IV level using this formula:
+The ESP32 can send JSON data to:
 
 ```text
-IV Level (%) = ((Current Weight - Empty Bag Weight) / (Full Bag Weight - Empty Bag Weight)) × 100
-```
-
-### Status rules
-- **Normal**: > 30%
-- **Low**: 10% – 30%
-- **Critical**: < 10%
-
----
-
-## 5. API for ESP32
-
-### Endpoint
-```http
 POST /api/update
 ```
 
-### JSON body example
+Example:
+
 ```json
 {
   "api_key": "IVMONITOR123",
   "patient_id": 1,
-  "weight_g": 425.50
+  "weight_g": 340.0,
+  "drop_count": 120,
+  "drops_per_min": 24.0,
+  "drip_status": "Normal"
 }
 ```
 
-### Success response example
-```json
-{
-  "success": true,
-  "patient_id": 1,
-  "weight_g": 425.5,
-  "level_percent": 75.1,
-  "status": "Normal",
-  "last_update_time": "2026-04-22T12:30:00+00:00"
-}
+For Patient 1, set:
+
+```cpp
+const int PATIENT_ID = 1;
 ```
 
----
+For Patient 2, set:
 
-## 6. Deploy to Render
-
-### Option 1 - easiest
-1. Upload this project to GitHub
-2. Go to Render
-3. Create **New Blueprint**
-4. Select your GitHub repo
-5. Render will detect `render.yaml`
-6. It will create:
-   - 1 Web Service
-   - 1 PostgreSQL database
-
-### Option 2 - manual setup
-Create on Render:
-- Web Service
-- PostgreSQL database
-
-Use:
-- Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn app:app`
-
-Environment variables:
-- `SECRET_KEY`
-- `API_KEY`
-- `DATABASE_URL`
-
----
-
-## 7. PostgreSQL Notes
-
-The app already supports PostgreSQL using:
-```python
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///iv_monitor.db")
+```cpp
+const int PATIENT_ID = 2;
 ```
 
-So:
-- local test -> SQLite
-- Render deployment -> PostgreSQL
+## Dashboard status logic
 
----
+- Normal: IV level above 30%
+- Low: IV level from 10% to 30%
+- Critical: IV level below 10%
 
-## 8. Excel Export
+Flow rate is calculated using:
 
-Click **Export Excel** on dashboard.
-It exports:
-- Current Status
-- Historical Readings
-- Alerts
-
----
-
-## 9. Connecting ESP32
-
-Open file:
-```bash
-esp32/esp32_hx711_iv_monitor.ino
+```text
+ml/hr = drops_per_min × 60 / DROP_FACTOR
 ```
 
-Change these values:
-- `YOUR_WIFI_NAME`
-- `YOUR_WIFI_PASSWORD`
-- `SERVER_URL`
-- `CALIBRATION_FACTOR`
-- `PATIENT_ID`
+Default `DROP_FACTOR` is `20 drops/ml`. You can change it in Render environment variables if your drip set uses a different drop factor.
 
-If you want one ESP32 per bed, use different `PATIENT_ID` from 1 to 5.
+## Render deployment
 
----
+This project includes `render.yaml`. The database is connected using the `DATABASE_URL` environment variable. The app automatically upgrades old database tables by adding the new drop-rate columns if they are missing.
 
-## 10. Important notes before real use
+## Notes
 
-This project is suitable for:
-- final year project
-- prototype
-- demo system
-- proof of concept
+If your graph does not move:
 
-For real hospital deployment, you should add:
-- authentication with password
-- stronger API security
-- encrypted HTTPS endpoint
-- device registration
-- audit trail
-- alarm notification (email / Telegram / SMS / buzzer)
-- more accurate calibration and validation
-
----
-
-## 11. Suggested workflow for you
-
-1. Run website locally
-2. Test manual readings
-3. Check graph and alerts
-4. Deploy to Render
-5. Test API using Postman
-6. Connect ESP32 + load cell
-7. Calibrate actual IV bag weights
-8. Finalize for presentation / FYP demo
-
----
-
-## 12. Want to extend later?
-You can easily add:
-- nurse login system
-- ward filter
-- Telegram/WhatsApp alert
-- auto refresh without reload
-- multiple device IDs
-- daily report PDF
-- patient history page
-
+1. Check Serial Monitor to confirm ESP32 is sending new readings.
+2. Confirm the Render URL in ESP32 ends with `/api/update`.
+3. Confirm `API_KEY` in ESP32 matches Render environment variable.
+4. Confirm `patient_id` is either `1` or `2`.
+5. Open `/api/dashboard-data` in the browser and check whether new readings appear.

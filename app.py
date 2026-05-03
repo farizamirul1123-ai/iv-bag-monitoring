@@ -1,6 +1,6 @@
 import os
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 from flask import (
@@ -15,7 +15,7 @@ from flask import (
     flash,
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import desc
+from sqlalchemy import desc, inspect, text
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "iv-monitor-secret-key")
@@ -29,8 +29,9 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-MONITOR_OPTIONS = ["Fariz", "Ku Lee Chin", "Hareny"]
+MONITOR_OPTIONS = ["Fariz", "Hareny", "Madam Ku Lee Chin"]
 DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
+DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
 
 
 class MonitorLog(db.Model):
@@ -43,10 +44,14 @@ class PatientSlot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     patient_name = db.Column(db.String(120), nullable=False)
     bed_number = db.Column(db.String(50), nullable=False)
+    ward_number = db.Column(db.String(50), nullable=True, default="Ward 3A")
     full_weight_g = db.Column(db.Float, nullable=False, default=550.0)
     empty_weight_g = db.Column(db.Float, nullable=False, default=50.0)
     current_weight_g = db.Column(db.Float, nullable=False, default=550.0)
     current_level_percent = db.Column(db.Float, nullable=False, default=100.0)
+    current_drop_rate = db.Column(db.Float, nullable=True, default=0.0)
+    current_flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
+    current_drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     current_status = db.Column(db.String(20), nullable=False, default="Normal")
     last_update_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
@@ -57,6 +62,10 @@ class Reading(db.Model):
     weight_g = db.Column(db.Float, nullable=False)
     level_percent = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(20), nullable=False)
+    drop_count = db.Column(db.Integer, nullable=True, default=0)
+    drops_per_min = db.Column(db.Float, nullable=True, default=0.0)
+    flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
+    drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     source = db.Column(db.String(30), nullable=False, default="system")
     created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
@@ -90,6 +99,10 @@ def format_dt(value, fmt="%d/%m/%Y %H:%M:%S"):
     return value.strftime(fmt)
 
 
+def format_time(value):
+    return format_dt(value, "%I:%M:%S %p")
+
+
 def calculate_level(current_weight, empty_weight, full_weight):
     denominator = max(full_weight - empty_weight, 1)
     percent = ((current_weight - empty_weight) / denominator) * 100
@@ -105,11 +118,141 @@ def get_status(level_percent):
     return "Normal"
 
 
+def calculate_flow_rate(drops_per_min):
+    try:
+        return round((float(drops_per_min) * 60.0) / max(DROP_FACTOR, 1.0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def ensure_schema_upgrades():
+    """Small safe migration helper for old SQLite/PostgreSQL deployments.
+    create_all() does not add new columns to an existing table, so this keeps
+    old Render databases compatible with the new drop-rate dashboard.
+    """
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+
+    def existing_columns(table_name):
+        if table_name not in tables:
+            return set()
+        return {col["name"] for col in inspector.get_columns(table_name)}
+
+    upgrades = {
+        "patient_slot": {
+            "ward_number": "VARCHAR(50) DEFAULT 'Ward 3A'",
+            "current_drop_rate": "FLOAT DEFAULT 0",
+            "current_flow_rate_ml_hr": "FLOAT DEFAULT 0",
+            "current_drip_status": "VARCHAR(30) DEFAULT 'Normal'",
+        },
+        "reading": {
+            "drop_count": "INTEGER DEFAULT 0",
+            "drops_per_min": "FLOAT DEFAULT 0",
+            "flow_rate_ml_hr": "FLOAT DEFAULT 0",
+            "drip_status": "VARCHAR(30) DEFAULT 'Normal'",
+        },
+    }
+
+    for table_name, cols in upgrades.items():
+        if table_name not in tables:
+            continue
+        current = existing_columns(table_name)
+        for col_name, ddl in cols.items():
+            if col_name not in current:
+                db.session.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {ddl}"))
+    db.session.commit()
+
+
+def seed_database():
+    defaults = [
+        {"patient_name": "Patient A", "bed_number": "Bed 05", "ward_number": "Ward 3A"},
+        {"patient_name": "Patient B", "bed_number": "Bed 06", "ward_number": "Ward 3A"},
+    ]
+
+    existing = PatientSlot.query.order_by(PatientSlot.id).all()
+    if len(existing) < 2:
+        for item in defaults[len(existing):]:
+            patient = PatientSlot(
+                patient_name=item["patient_name"],
+                bed_number=item["bed_number"],
+                ward_number=item["ward_number"],
+                full_weight_g=550.0,
+                empty_weight_g=50.0,
+                current_weight_g=550.0,
+                current_level_percent=100.0,
+                current_drop_rate=0.0,
+                current_flow_rate_ml_hr=0.0,
+                current_drip_status="Normal",
+                current_status="Normal",
+                last_update_time=utcnow(),
+            )
+            db.session.add(patient)
+        db.session.commit()
+
+    patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
+    for idx, patient in enumerate(patients):
+        # Upgrade old default names from the previous 5-patient version without
+        # overwriting user-custom names.
+        if patient.patient_name in [f"Patient {idx + 1}", "Patient 1", "Patient 2"]:
+            patient.patient_name = defaults[idx]["patient_name"]
+        if not getattr(patient, "ward_number", None):
+            patient.ward_number = defaults[idx]["ward_number"]
+        if not patient.bed_number:
+            patient.bed_number = defaults[idx]["bed_number"]
+        if patient.current_drop_rate is None:
+            patient.current_drop_rate = 0.0
+        if patient.current_flow_rate_ml_hr is None:
+            patient.current_flow_rate_ml_hr = 0.0
+        if not patient.current_drip_status:
+            patient.current_drip_status = "Normal"
+
+        if Reading.query.filter_by(patient_id=patient.id).count() == 0:
+            # Demo history gives the dashboard visible moving graphs on first launch.
+            # Once ESP32 data arrives, these are simply older readings.
+            base_now = utcnow() - timedelta(minutes=70)
+            if idx == 0:
+                weights = [520, 500, 485, 470, 455, 435, 420, 400, 385, 365, 350, 340]
+                drops = [28, 26, 31, 27, 29, 26, 25, 28, 24, 23, 24, 24]
+            else:
+                weights = [500, 475, 455, 435, 360, 340, 320, 290, 260, 220, 170, 110]
+                drops = [15, 13, 12, 11, 12, 10, 11, 9, 8, 7, 8, 12]
+
+            for n, (weight, drop_rate) in enumerate(zip(weights, drops)):
+                level = calculate_level(weight, patient.empty_weight_g, patient.full_weight_g)
+                status = get_status(level)
+                flow = calculate_flow_rate(drop_rate)
+                drip_status = get_drip_status(drop_rate)
+                db.session.add(
+                    Reading(
+                        patient_id=patient.id,
+                        weight_g=weight,
+                        level_percent=level,
+                        status=status,
+                        drops_per_min=drop_rate,
+                        flow_rate_ml_hr=flow,
+                        drip_status=drip_status,
+                        drop_count=n * int(max(drop_rate, 1)),
+                        source="demo",
+                        created_at=base_now + timedelta(minutes=n * 6),
+                    )
+                )
+            patient.current_weight_g = weights[-1]
+            patient.current_level_percent = calculate_level(weights[-1], patient.empty_weight_g, patient.full_weight_g)
+            patient.current_status = get_status(patient.current_level_percent)
+            patient.current_drop_rate = drops[-1]
+            patient.current_flow_rate_ml_hr = calculate_flow_rate(drops[-1])
+            patient.current_drip_status = get_drip_status(drops[-1])
+            patient.last_update_time = base_now + timedelta(minutes=(len(weights) - 1) * 6)
+            create_alert_if_needed(patient)
+    db.session.commit()
+
+
 def create_alert_if_needed(patient):
+    # IV level alert.
     if patient.current_status not in ["Low", "Critical"]:
         return
 
-    cutoff_minutes = 10
+    cutoff_minutes = 5
     latest_similar = (
         Alert.query.filter_by(patient_id=patient.id, alert_type=patient.current_status)
         .order_by(desc(Alert.created_at))
@@ -117,17 +260,15 @@ def create_alert_if_needed(patient):
     )
 
     now = utcnow()
-
     if latest_similar:
         latest_created = normalize_dt(latest_similar.created_at)
         now_naive = normalize_dt(now)
-
         if latest_created and (now_naive - latest_created).total_seconds() < cutoff_minutes * 60:
             return
 
     msg = (
-        f"Patient ID {patient.id} ({patient.patient_name}) IV bag is {patient.current_status.lower()} "
-        f"at {patient.current_level_percent:.1f}%"
+        f"{patient.patient_name} IV level is {patient.current_status.lower()} "
+        f"at {patient.current_level_percent:.1f}%. Please monitor."
     )
 
     db.session.add(
@@ -141,49 +282,10 @@ def create_alert_if_needed(patient):
     )
 
 
-def seed_database():
-    if PatientSlot.query.count() == 0:
-        default_names = [
-            "Patient 1",
-            "Patient 2",
-            "Patient 3",
-            "Patient 4",
-            "Patient 5",
-        ]
-
-        for i in range(5):
-            patient = PatientSlot(
-                patient_name=default_names[i],
-                bed_number=f"Bed {i + 1}",
-                full_weight_g=550.0,
-                empty_weight_g=50.0,
-                current_weight_g=550.0,
-                current_level_percent=100.0,
-                current_status="Normal",
-                last_update_time=utcnow(),
-            )
-            db.session.add(patient)
-
-        db.session.commit()
-
-        for patient in PatientSlot.query.order_by(PatientSlot.id).all():
-            db.session.add(
-                Reading(
-                    patient_id=patient.id,
-                    weight_g=patient.current_weight_g,
-                    level_percent=patient.current_level_percent,
-                    status=patient.current_status,
-                    source="seed",
-                    created_at=utcnow(),
-                )
-            )
-
-        db.session.commit()
-
-
 @app.before_request
 def ensure_db_ready():
     db.create_all()
+    ensure_schema_upgrades()
     seed_database()
 
 
@@ -200,7 +302,12 @@ def index():
     language = request.args.get("lang")
     if language in ["en", "ms"]:
         session["language"] = language
-    return render_template("login.html")
+    return render_template("landing.html")
+
+
+@app.route("/select-monitor")
+def select_monitor():
+    return render_template("select_monitor.html")
 
 
 @app.route("/set-language/<lang>", methods=["POST"])
@@ -216,12 +323,12 @@ def login():
     monitor_name = request.form.get("monitor_name", "").strip()
     if monitor_name not in MONITOR_OPTIONS:
         flash("Please select a valid monitor.")
-        return redirect(url_for("index"))
+        return redirect(url_for("select_monitor"))
 
     session["monitor_name"] = monitor_name
     db.session.add(MonitorLog(monitor_name=monitor_name, login_time=utcnow()))
     db.session.commit()
-    return redirect(url_for("dashboard", patient_id=1))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/logout")
@@ -235,31 +342,15 @@ def dashboard():
     if "monitor_name" not in session:
         return redirect(url_for("index"))
 
-    patient_id = request.args.get("patient_id", default=1, type=int)
-    selected_patient = PatientSlot.query.get(patient_id) or PatientSlot.query.order_by(PatientSlot.id).first()
-    patients = PatientSlot.query.order_by(PatientSlot.id).all()
-    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(10).all()
-
-    readings = (
-        Reading.query.filter_by(patient_id=selected_patient.id)
-        .order_by(Reading.created_at.asc())
-        .limit(100)
-        .all()
-    )
-
-    chart_labels = [format_dt(r.created_at, "%d/%m %H:%M:%S") for r in readings]
-    chart_weights = [round(r.weight_g, 2) for r in readings]
-    chart_levels = [round(r.level_percent, 2) for r in readings]
+    patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
+    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(6).all()
 
     return render_template(
         "dashboard.html",
         patients=patients,
-        selected_patient=selected_patient,
         alerts=alerts,
-        chart_labels=chart_labels,
-        chart_weights=chart_weights,
-        chart_levels=chart_levels,
         now_utc=utcnow(),
+        dashboard_data=build_dashboard_payload(),
     )
 
 
@@ -268,6 +359,7 @@ def update_patient(patient_id):
     patient = PatientSlot.query.get_or_404(patient_id)
     patient.patient_name = request.form.get("patient_name", patient.patient_name).strip() or patient.patient_name
     patient.bed_number = request.form.get("bed_number", patient.bed_number).strip() or patient.bed_number
+    patient.ward_number = request.form.get("ward_number", patient.ward_number or "Ward 3A").strip() or patient.ward_number
     patient.full_weight_g = float(request.form.get("full_weight_g", patient.full_weight_g))
     patient.empty_weight_g = float(request.form.get("empty_weight_g", patient.empty_weight_g))
 
@@ -280,7 +372,7 @@ def update_patient(patient_id):
     create_alert_if_needed(patient)
     db.session.commit()
 
-    return redirect(url_for("dashboard", patient_id=patient.id))
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/manual-reading/<int:patient_id>", methods=["POST"])
@@ -289,12 +381,13 @@ def manual_reading(patient_id):
 
     try:
         weight_g = float(request.form.get("weight_g"))
+        drops_per_min = float(request.form.get("drops_per_min") or 0)
     except (TypeError, ValueError):
-        flash("Invalid weight value.")
-        return redirect(url_for("dashboard", patient_id=patient.id))
+        flash("Invalid reading value.")
+        return redirect(url_for("dashboard"))
 
-    save_reading(patient, weight_g, source="manual")
-    return redirect(url_for("dashboard", patient_id=patient.id))
+    save_reading(patient, weight_g, drops_per_min=drops_per_min, source="manual")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/api/update", methods=["POST"])
@@ -308,14 +401,25 @@ def api_update():
     try:
         patient_id = int(payload.get("patient_id"))
         weight_g = float(payload.get("weight_g"))
+        drops_per_min = float(payload.get("drops_per_min") or 0)
+        drop_count = int(float(payload.get("drop_count") or 0))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "patient_id and weight_g are required"}), 400
 
-    patient = PatientSlot.query.get(patient_id)
-    if not patient:
-        return jsonify({"success": False, "message": "Patient slot not found"}), 404
+    drip_status = payload.get("drip_status") or get_drip_status(drops_per_min)
 
-    save_reading(patient, weight_g, source="esp32")
+    patient = PatientSlot.query.get(patient_id)
+    if not patient or patient.id not in [p.id for p in PatientSlot.query.order_by(PatientSlot.id).limit(2).all()]:
+        return jsonify({"success": False, "message": "Only Patient 1 and Patient 2 are active in this dashboard"}), 404
+
+    save_reading(
+        patient,
+        weight_g,
+        drops_per_min=drops_per_min,
+        drop_count=drop_count,
+        drip_status=drip_status,
+        source="esp32",
+    )
 
     return jsonify(
         {
@@ -324,6 +428,9 @@ def api_update():
             "weight_g": patient.current_weight_g,
             "level_percent": patient.current_level_percent,
             "status": patient.current_status,
+            "drops_per_min": patient.current_drop_rate,
+            "flow_rate_ml_hr": patient.current_flow_rate_ml_hr,
+            "drip_status": patient.current_drip_status,
             "last_update_time": normalize_dt(patient.last_update_time).isoformat(),
         }
     )
@@ -332,107 +439,141 @@ def api_update():
 @app.route("/api/patient/<int:patient_id>")
 def api_patient(patient_id):
     patient = PatientSlot.query.get_or_404(patient_id)
-
-    readings = (
-        Reading.query.filter_by(patient_id=patient.id)
-        .order_by(Reading.created_at.desc())
-        .limit(20)
-        .all()
-    )
-
-    return jsonify(
-        {
-            "id": patient.id,
-            "patient_name": patient.patient_name,
-            "bed_number": patient.bed_number,
-            "current_weight_g": patient.current_weight_g,
-            "current_level_percent": patient.current_level_percent,
-            "current_status": patient.current_status,
-            "last_update_time": normalize_dt(patient.last_update_time).isoformat(),
-            "readings": [
-                {
-                    "weight_g": r.weight_g,
-                    "level_percent": r.level_percent,
-                    "status": r.status,
-                    "created_at": normalize_dt(r.created_at).isoformat(),
-                }
-                for r in readings
-            ],
-        }
-    )
+    readings = get_readings(patient.id, limit=30)
+    return jsonify(patient_payload(patient, readings))
 
 
+@app.route("/api/dashboard-data")
+def api_dashboard_data():
+    return jsonify(build_dashboard_payload())
+
+
+# Compatibility endpoint for the previous dashboard JS.
 @app.route("/api/dashboard-data/<int:patient_id>")
-def api_dashboard_data(patient_id):
-    patient = PatientSlot.query.get_or_404(patient_id)
-    patients = PatientSlot.query.order_by(PatientSlot.id).all()
-    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(10).all()
+def api_dashboard_data_old(patient_id):
+    return jsonify(build_dashboard_payload())
 
-    readings = (
-        Reading.query.filter_by(patient_id=patient.id)
-        .order_by(Reading.created_at.asc())
-        .limit(100)
-        .all()
+
+def get_drip_status(drops_per_min):
+    if drops_per_min <= 0:
+        return "No Drip"
+    if drops_per_min < 10:
+        return "Slow"
+    if drops_per_min > 80:
+        return "Fast"
+    return "Normal"
+
+
+def get_readings(patient_id, limit=50):
+    return (
+        Reading.query.filter_by(patient_id=patient_id)
+        .order_by(Reading.created_at.desc())
+        .limit(limit)
+        .all()[::-1]
     )
 
-    return jsonify(
-        {
-            "selected_patient": {
-                "id": patient.id,
-                "patient_name": patient.patient_name,
-                "bed_number": patient.bed_number,
-                "current_weight_g": round(patient.current_weight_g, 2),
-                "current_level_percent": round(patient.current_level_percent, 2),
-                "current_status": patient.current_status,
-                "last_update_time": format_dt(patient.last_update_time),
-                "full_weight_g": round(patient.full_weight_g, 2),
-                "empty_weight_g": round(patient.empty_weight_g, 2),
-            },
-            "patients": [
+
+def patient_payload(patient, readings=None):
+    readings = readings if readings is not None else get_readings(patient.id, limit=50)
+    return {
+        "id": patient.id,
+        "patient_code": f"PT{patient.id:03d}",
+        "patient_name": patient.patient_name,
+        "bed_number": patient.bed_number,
+        "ward_number": patient.ward_number or "Ward 3A",
+        "current_weight_g": round(patient.current_weight_g or 0, 2),
+        "current_level_percent": round(patient.current_level_percent or 0, 2),
+        "current_status": patient.current_status or "Normal",
+        "current_drop_rate": round(patient.current_drop_rate or 0, 2),
+        "current_flow_rate_ml_hr": round(patient.current_flow_rate_ml_hr or 0, 2),
+        "current_drip_status": patient.current_drip_status or "Normal",
+        "last_update_time": format_time(patient.last_update_time),
+        "last_update_full": format_dt(patient.last_update_time),
+        "full_weight_g": round(patient.full_weight_g or 0, 2),
+        "empty_weight_g": round(patient.empty_weight_g or 0, 2),
+        "readings": [
+            {
+                "label": format_dt(r.created_at, "%H:%M:%S"),
+                "time": format_dt(r.created_at, "%d/%m %H:%M:%S"),
+                "weight_g": round(r.weight_g or 0, 2),
+                "level_percent": round(r.level_percent or 0, 2),
+                "status": r.status or "Normal",
+                "drops_per_min": round(r.drops_per_min or 0, 2),
+                "flow_rate_ml_hr": round(r.flow_rate_ml_hr or 0, 2),
+                "drip_status": r.drip_status or "Normal",
+                "source": r.source or "system",
+            }
+            for r in readings
+        ],
+    }
+
+
+def build_dashboard_payload():
+    patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
+    patient_items = [patient_payload(p) for p in patients]
+    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(6).all()
+
+    chart_labels = []
+    if patient_items:
+        # Use labels from patient with the longest reading list.
+        longest = max(patient_items, key=lambda item: len(item["readings"]))
+        chart_labels = [r["label"] for r in longest["readings"]]
+
+    return {
+        "server_time": format_time(utcnow()),
+        "server_date": format_dt(utcnow(), "%d %B %Y"),
+        "patients": patient_items,
+        "alerts": [
+            {
+                "id": a.id,
+                "patient_id": a.patient_id,
+                "patient_name": (PatientSlot.query.get(a.patient_id).patient_name if PatientSlot.query.get(a.patient_id) else f"Patient {a.patient_id}"),
+                "level_percent": round(a.level_percent or 0, 2),
+                "alert_type": a.alert_type,
+                "message": a.message,
+                "created_at": format_time(a.created_at),
+                "created_at_full": format_dt(a.created_at),
+                "acknowledged": a.acknowledged,
+            }
+            for a in alerts
+        ],
+        "drop_comparison": {
+            "labels": chart_labels,
+            "series": [
                 {
-                    "id": p.id,
-                    "patient_name": p.patient_name,
-                    "bed_number": p.bed_number,
-                    "current_weight_g": round(p.current_weight_g, 2),
-                    "current_level_percent": round(p.current_level_percent, 2),
-                    "current_status": p.current_status,
+                    "patient_id": item["id"],
+                    "patient_name": item["patient_name"],
+                    "drops": [r["drops_per_min"] for r in item["readings"]],
                 }
-                for p in patients
+                for item in patient_items
             ],
-            "alerts": [
-                {
-                    "id": a.id,
-                    "patient_id": a.patient_id,
-                    "alert_type": a.alert_type,
-                    "message": a.message,
-                    "created_at": format_dt(a.created_at),
-                    "acknowledged": a.acknowledged,
-                }
-                for a in alerts
-            ],
-            "chart": {
-                "labels": [format_dt(r.created_at, "%d/%m %H:%M:%S") for r in readings],
-                "weights": [round(r.weight_g, 2) for r in readings],
-                "levels": [round(r.level_percent, 2) for r in readings],
-            },
-        }
-    )
+        },
+        "system": {
+            "data_source": "PostgreSQL / Render Cloud" if "postgresql" in DATABASE_URL else "SQLite Local Test",
+            "connected": True,
+        },
+    }
 
 
 @app.route("/export/excel")
 def export_excel():
-    patients = PatientSlot.query.order_by(PatientSlot.id).all()
+    patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
     readings = Reading.query.order_by(Reading.created_at.desc()).all()
     alerts = Alert.query.order_by(Alert.created_at.desc()).all()
 
     patient_rows = [
         {
             "Patient ID": p.id,
+            "Patient Code": f"PT{p.id:03d}",
             "Patient Name": p.patient_name,
+            "Ward": p.ward_number,
             "Bed Number": p.bed_number,
             "Current IV Weight (g)": p.current_weight_g,
             "IV Level (%)": p.current_level_percent,
-            "Status": p.current_status,
+            "IV Status": p.current_status,
+            "Drop Rate (drops/min)": p.current_drop_rate,
+            "Flow Rate (ml/hr)": p.current_flow_rate_ml_hr,
+            "Drip Status": p.current_drip_status,
             "Last Update Time": format_dt(p.last_update_time),
             "Full Weight (g)": p.full_weight_g,
             "Empty Weight (g)": p.empty_weight_g,
@@ -446,7 +587,11 @@ def export_excel():
             "Patient ID": r.patient_id,
             "Weight (g)": r.weight_g,
             "Level (%)": r.level_percent,
-            "Status": r.status,
+            "IV Status": r.status,
+            "Drop Count": r.drop_count,
+            "Drop Rate (drops/min)": r.drops_per_min,
+            "Flow Rate (ml/hr)": r.flow_rate_ml_hr,
+            "Drip Status": r.drip_status,
             "Source": r.source,
             "Created At": format_dt(r.created_at),
         }
@@ -488,17 +633,23 @@ def acknowledge_alert(alert_id):
     alert = Alert.query.get_or_404(alert_id)
     alert.acknowledged = True
     db.session.commit()
-    return redirect(url_for("dashboard", patient_id=request.form.get("patient_id", 1)))
+    return redirect(url_for("dashboard"))
 
 
-def save_reading(patient, weight_g, source="system"):
+def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status=None, source="system"):
     now = utcnow()
     level = calculate_level(weight_g, patient.empty_weight_g, patient.full_weight_g)
     status = get_status(level)
+    drops_per_min = round(float(drops_per_min or 0), 2)
+    flow_rate_ml_hr = calculate_flow_rate(drops_per_min)
+    drip_status = drip_status or get_drip_status(drops_per_min)
 
     patient.current_weight_g = round(weight_g, 2)
     patient.current_level_percent = level
     patient.current_status = status
+    patient.current_drop_rate = drops_per_min
+    patient.current_flow_rate_ml_hr = flow_rate_ml_hr
+    patient.current_drip_status = drip_status
     patient.last_update_time = now
 
     db.session.add(
@@ -507,6 +658,10 @@ def save_reading(patient, weight_g, source="system"):
             weight_g=round(weight_g, 2),
             level_percent=level,
             status=status,
+            drop_count=drop_count,
+            drops_per_min=drops_per_min,
+            flow_rate_ml_hr=flow_rate_ml_hr,
+            drip_status=drip_status,
             source=source,
             created_at=now,
         )
