@@ -35,3 +35,11 @@ static/css/styles.css
 ```
 
 The backend files are unchanged from the working version.
+
+
+## Minimal fixes added
+
+- Last Update now uses Malaysia time (UTC+8) so Render time matches the ESP32 Serial Monitor.
+- ESP32 sketches avoid sending `-1` to the dashboard when HX711 is momentarily not ready; they reuse the last valid weight or send 0 only when no valid value exists yet.
+- Backend ignores invalid tiny ESP32 readings (`<= 5 g`) and keeps the last valid weight, so the dashboard does not get stuck at `1 ml` due to HX711 error/noise.
+- Existing design, routes, database structure, API key, and Render endpoint are kept as-is.

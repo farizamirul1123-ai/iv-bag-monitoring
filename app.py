@@ -34,10 +34,20 @@ DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
 DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
 
 
+def malaysia_now():
+    """Return Malaysia local time as a naive datetime for DB storage/display.
+
+    Render servers normally run on UTC, while the IV dashboard is used in
+    Malaysia. Keeping this as a small helper avoids Last Update showing 8 hours
+    behind the ESP32 Serial Monitor.
+    """
+    return datetime.utcnow() + timedelta(hours=8)
+
+
 class MonitorLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     monitor_name = db.Column(db.String(100), nullable=False)
-    login_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    login_time = db.Column(db.DateTime, default=malaysia_now, nullable=False)
 
 
 class PatientSlot(db.Model):
@@ -53,7 +63,7 @@ class PatientSlot(db.Model):
     current_flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
     current_drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     current_status = db.Column(db.String(20), nullable=False, default="Normal")
-    last_update_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    last_update_time = db.Column(db.DateTime, default=malaysia_now, nullable=False)
 
 
 class Reading(db.Model):
@@ -67,7 +77,7 @@ class Reading(db.Model):
     flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
     drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     source = db.Column(db.String(30), nullable=False, default="system")
-    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    created_at = db.Column(db.DateTime, default=malaysia_now, nullable=False)
 
 
 class Alert(db.Model):
@@ -76,12 +86,13 @@ class Alert(db.Model):
     level_percent = db.Column(db.Float, nullable=False)
     alert_type = db.Column(db.String(20), nullable=False)
     message = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    created_at = db.Column(db.DateTime, default=malaysia_now, nullable=False)
     acknowledged = db.Column(db.Boolean, default=False, nullable=False)
 
 
 def utcnow():
-    return datetime.now()
+    # Kept for compatibility with the existing code name.
+    return malaysia_now()
 
 
 def normalize_dt(value):
@@ -664,7 +675,7 @@ def export_excel():
         pd.DataFrame(alert_rows).to_excel(writer, sheet_name="Alerts", index=False)
 
     output.seek(0)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = malaysia_now().strftime("%Y%m%d_%H%M%S")
 
     return send_file(
         output,
@@ -683,12 +694,15 @@ def acknowledge_alert(alert_id):
 
 
 def latest_valid_weight(patient):
-    """Return a reasonable previous weight if ESP32 sends 0 during calibration/noise."""
+    """Return a previous valid weight if ESP32 briefly sends an invalid tiny value."""
+    # Avoid locking the dashboard at 1 ml when HX711 returns -1 / 0 / tiny noise.
+    # A real IV bag reading should normally be well above this threshold.
+    min_valid_weight = 5.0
     current = float(patient.current_weight_g or 0)
-    if current > 0:
+    if current > min_valid_weight:
         return current
     latest = (
-        Reading.query.filter(Reading.patient_id == patient.id, Reading.weight_g > 0)
+        Reading.query.filter(Reading.patient_id == patient.id, Reading.weight_g > min_valid_weight)
         .order_by(Reading.created_at.desc())
         .first()
     )
@@ -713,10 +727,9 @@ def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system")
     if weight < 0:
         weight = abs(weight)
 
-    if source == "esp32" and weight <= 0:
-        # Do not destroy the live dashboard with an invalid 0g value.
-        # This usually means the load cell is not ready, tared wrongly, or the
-        # calibration factor sign is wrong. Drops can still update normally.
+    if source == "esp32" and weight <= 5.0:
+        # Do not destroy the live dashboard with invalid HX711 values such as
+        # -1, 0, or tiny noise. Drops can still update normally.
         weight = latest_valid_weight(patient)
 
     return round(max(weight, 0.0), 2)

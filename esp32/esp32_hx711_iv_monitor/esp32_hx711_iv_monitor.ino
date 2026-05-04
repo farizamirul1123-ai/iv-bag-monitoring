@@ -35,6 +35,14 @@ float CALIBRATION_FACTOR = -7050.0;
 // Kalau bacaan berat terbalik, tukar false kepada true.
 bool REVERSE_WEIGHT_SIGN = false;
 
+// FINAL FIX:
+// true  = ESP32 akan tare masa mula. Load cell MESTI kosong ketika boot.
+// false = ESP32 tidak auto tare. Sesuai kalau IV bag sudah tergantung masa ESP32 reset.
+bool AUTO_TARE_ON_START = true;
+
+// Jika calibration sign/wiring terbalik dan bacaan jadi negatif, nilai akan dijadikan positif.
+bool USE_ABSOLUTE_WEIGHT = true;
+
 
 // ===============================
 // 3. DROP DETECTOR PIN
@@ -52,6 +60,9 @@ unsigned long windowDrops = 0;
 unsigned long lastDropTime = 0;
 unsigned long lastSendTime = 0;
 unsigned long lastSerialTime = 0;
+
+float lastValidWeightGrams = 0.0;
+bool hasValidWeight = false;
 
 const unsigned long DROP_DEBOUNCE_MS = 120;
 const unsigned long SEND_INTERVAL_MS = 10000;   // hantar ke server setiap 10 saat
@@ -138,8 +149,11 @@ void calibrateDropIdle() {
 // ===============================
 float readWeightGrams() {
   if (!scale.is_ready()) {
-    Serial.println("HX711 not ready. Check wiring.");
-    return -1;
+    Serial.println("HX711 not ready. Check wiring. Last valid weight will be used.");
+    if (hasValidWeight) {
+      return lastValidWeightGrams;
+    }
+    return 0.0;
   }
 
   float weight = scale.get_units(10);
@@ -148,14 +162,19 @@ float readWeightGrams() {
     weight = -weight;
   }
 
-  // Buang noise kecil
+  // Jika bacaan jadi negatif kerana polarity/calibration sign, jangan hantar -1 ke dashboard.
+  if (USE_ABSOLUTE_WEIGHT && weight < 0) {
+    weight = abs(weight);
+  }
+
+  // Buang noise kecil sahaja.
   if (abs(weight) < 2.0) {
     weight = 0.0;
   }
 
-  // Jangan bagi nilai negatif masuk dashboard
-  if (weight < 0) {
-    weight = 0.0;
+  if (weight >= 0.0) {
+    lastValidWeightGrams = weight;
+    hasValidWeight = true;
   }
 
   return weight;
@@ -285,12 +304,16 @@ void setup() {
   scale.begin(HX711_DOUT_PIN, HX711_SCK_PIN);
   scale.set_scale(CALIBRATION_FACTOR);
 
-  Serial.println("Taring load cell...");
-  Serial.println("Pastikan tiada beban pada load cell.");
-  delay(2000);
-  scale.tare();
-
-  Serial.println("Tare completed.");
+  if (AUTO_TARE_ON_START) {
+    Serial.println("Taring load cell...");
+    Serial.println("Pastikan tiada beban pada load cell.");
+    delay(2000);
+    scale.tare();
+    Serial.println("Tare completed.");
+  } else {
+    Serial.println("AUTO_TARE_ON_START = false. Tare skipped.");
+    Serial.println("Use this mode only if the IV bag is already mounted during ESP32 boot/reset.");
+  }
 
   // Drop detector idle calibration
   calibrateDropIdle();
