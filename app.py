@@ -31,23 +31,14 @@ db = SQLAlchemy(app)
 
 MONITOR_OPTIONS = ["Fariz Amirul", "Hareny", "Madam Ku Lee Chin"]
 DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
+TIMEZONE_OFFSET_HOURS = int(os.getenv("TIMEZONE_OFFSET_HOURS", "8"))  # Render runs in UTC; Malaysia time = UTC+8.
 DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
-
-
-def malaysia_now():
-    """Return Malaysia local time as a naive datetime for DB storage/display.
-
-    Render servers normally run on UTC, while the IV dashboard is used in
-    Malaysia. Keeping this as a small helper avoids Last Update showing 8 hours
-    behind the ESP32 Serial Monitor.
-    """
-    return datetime.utcnow() + timedelta(hours=8)
 
 
 class MonitorLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     monitor_name = db.Column(db.String(100), nullable=False)
-    login_time = db.Column(db.DateTime, default=malaysia_now, nullable=False)
+    login_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
 
 class PatientSlot(db.Model):
@@ -63,7 +54,7 @@ class PatientSlot(db.Model):
     current_flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
     current_drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     current_status = db.Column(db.String(20), nullable=False, default="Normal")
-    last_update_time = db.Column(db.DateTime, default=malaysia_now, nullable=False)
+    last_update_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
 
 class Reading(db.Model):
@@ -77,7 +68,7 @@ class Reading(db.Model):
     flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
     drip_status = db.Column(db.String(30), nullable=True, default="Normal")
     source = db.Column(db.String(30), nullable=False, default="system")
-    created_at = db.Column(db.DateTime, default=malaysia_now, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
 
 class Alert(db.Model):
@@ -86,13 +77,13 @@ class Alert(db.Model):
     level_percent = db.Column(db.Float, nullable=False)
     alert_type = db.Column(db.String(20), nullable=False)
     message = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=malaysia_now, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
     acknowledged = db.Column(db.Boolean, default=False, nullable=False)
 
 
 def utcnow():
-    # Kept for compatibility with the existing code name.
-    return malaysia_now()
+    # Store/display Malaysia time by default so Last Update matches ESP32 Serial Monitor.
+    return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET_HOURS)
 
 
 def normalize_dt(value):
@@ -514,7 +505,7 @@ def get_drip_status(drops_per_min):
     return "Normal"
 
 
-def get_readings(patient_id, limit=30):
+def get_readings(patient_id, limit=50):
     return (
         Reading.query.filter_by(patient_id=patient_id)
         .order_by(Reading.created_at.desc())
@@ -524,7 +515,7 @@ def get_readings(patient_id, limit=30):
 
 
 def patient_payload(patient, readings=None):
-    readings = readings if readings is not None else get_readings(patient.id, limit=30)
+    readings = readings if readings is not None else get_readings(patient.id, limit=50)
     current_weight = max(float(patient.current_weight_g or 0), 0.0)
     full_weight = max(float(patient.full_weight_g or 0), 0.0)
     empty_weight = max(float(patient.empty_weight_g or 0), 0.0)
@@ -675,7 +666,7 @@ def export_excel():
         pd.DataFrame(alert_rows).to_excel(writer, sheet_name="Alerts", index=False)
 
     output.seek(0)
-    timestamp = malaysia_now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     return send_file(
         output,
@@ -693,47 +684,22 @@ def acknowledge_alert(alert_id):
     return redirect(url_for("dashboard"))
 
 
-def latest_valid_weight(patient):
-    """Return a previous valid weight if ESP32 briefly sends an invalid tiny value."""
-    # Avoid locking the dashboard at 1 ml when HX711 returns -1 / 0 / tiny noise.
-    # A real IV bag reading should normally be well above this threshold.
-    min_valid_weight = 5.0
-    current = float(patient.current_weight_g or 0)
-    if current > min_valid_weight:
-        return current
-    latest = (
-        Reading.query.filter(Reading.patient_id == patient.id, Reading.weight_g > min_valid_weight)
-        .order_by(Reading.created_at.desc())
-        .first()
-    )
-    if latest:
-        return float(latest.weight_g or 0)
-    return float(patient.full_weight_g or 550.0)
-
-
 def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system"):
-    """Clean load-cell value before saving.
+    """Return the exact ESP32 weight for dashboard/graph consistency.
 
-    FINAL FIX: the dashboard must follow the ESP32 Serial Monitor exactly.
-    If ESP32 sends 0.00 g, the website saves 0.00 g. It will not keep the
-    previous valid value anymore, because that made the graph show old values
-    such as 19 g / 25 g while Serial Monitor already showed 0 g.
+    Important: the dashboard must follow the Serial Monitor. If ESP32 sends
+    0.00 g, the website will show 0.00 g and the graph will also drop to 0.
+    This prevents old values such as 19 g or 25 g from being held on screen.
     """
     try:
         weight = float(weight_g)
     except (TypeError, ValueError):
         weight = 0.0
 
-    # Negative values are not a real IV weight. Clamp to zero so the website
-    # matches a zero/empty reading instead of displaying a previous value.
     if weight < 0:
         weight = 0.0
 
-    # Remove tiny HX711 noise only. A real 0.00 g reading remains 0.00 g.
-    if abs(weight) < 1.0:
-        weight = 0.0
-
-    return round(max(weight, 0.0), 2)
+    return round(weight, 2)
 
 
 def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status=None, source="system"):

@@ -3208,3 +3208,46 @@ body {
         bottom: 32px !important;
     }
 }
+
+/* =========================================================
+   STABLE FINAL FIX
+   - Stop sticky header from covering dashboard content
+   - Keep sidebar buttons clickable
+   - Ensure chart canvases have visible height
+   ========================================================= */
+.app-topbar {
+    position: relative !important;
+    top: auto !important;
+    z-index: 10 !important;
+    pointer-events: auto !important;
+}
+
+.app-sidebar {
+    z-index: 40 !important;
+}
+
+.side-item,
+.mobile-bottom-nav button,
+.right-card-head button,
+.notification-item {
+    pointer-events: auto !important;
+}
+
+.app-content {
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+.chart-card {
+    min-height: 220px !important;
+}
+
+.chart-card canvas {
+    display: block !important;
+    width: 100% !important;
+    min-height: 150px !important;
+}
+
+.wide-chart {
+    min-height: 230px !important;
+}
