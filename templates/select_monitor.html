@@ -62,38 +62,56 @@
         <form method="post" action="{{ url_for('login') }}" class="template-monitor-grid">
             <button type="submit" name="monitor_name" value="Fariz Amirul" class="template-monitor-card featured-monitor-card">
                 <span class="template-monitor-tag">Primary Monitor</span>
-                <span class="monitor-photo-wrap"><img src="{{ url_for('static', filename='img/profile-fariz.png') }}" alt="Fariz Amirul" class="monitor-photo"></span>
+                <span class="monitor-photo-wrap">
+                    <img src="{{ url_for('static', filename='img/profile-fariz.png') }}" alt="Fariz Amirul" class="monitor-photo">
+                </span>
                 <strong>Fariz Amirul</strong>
                 <small data-i18n="monitorSupervisor">Monitor Supervisor</small>
                 <div class="template-monitor-meta">
                     <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
                     <span><i class="bi bi-broadcast-pin"></i> <span data-i18n="live">LIVE</span></span>
                 </div>
-                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+                <span class="open-dashboard-btn">
+                    <i class="bi bi-graph-up-arrow"></i>
+                    <b data-i18n="openDashboard">Open Dashboard</b>
+                    <i class="bi bi-arrow-right"></i>
+                </span>
             </button>
 
-            <button type="submit" name="monitor_name" value="Hareny" class="template-monitor-card empty-photo-card">
+            <button type="submit" name="monitor_name" value="Hareny" class="template-monitor-card">
                 <span class="template-monitor-tag alt">Team Member</span>
-                <span class="monitor-photo-wrap monitor-photo-empty"><i class="bi bi-person-plus"></i><em data-i18n="photoPending">Photo Pending</em></span>
+                <span class="monitor-photo-wrap">
+                    <img src="{{ url_for('static', filename='img/profile-hareny.png') }}" alt="Hareny" class="monitor-photo">
+                </span>
                 <strong>Hareny</strong>
                 <small data-i18n="projectTeam">Project Team</small>
                 <div class="template-monitor-meta">
                     <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
                     <span><i class="bi bi-clipboard-data"></i> IV Monitoring</span>
                 </div>
-                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+                <span class="open-dashboard-btn">
+                    <i class="bi bi-graph-up-arrow"></i>
+                    <b data-i18n="openDashboard">Open Dashboard</b>
+                    <i class="bi bi-arrow-right"></i>
+                </span>
             </button>
 
             <button type="submit" name="monitor_name" value="Madam Ku Lee Chin" class="template-monitor-card">
                 <span class="template-monitor-tag">Supervisor</span>
-                <span class="monitor-photo-wrap"><img src="{{ url_for('static', filename='img/profile-madam.png') }}" alt="Madam Ku Lee Chin" class="monitor-photo"></span>
+                <span class="monitor-photo-wrap">
+                    <img src="{{ url_for('static', filename='img/profile-madam.png') }}" alt="Madam Ku Lee Chin" class="monitor-photo">
+                </span>
                 <strong>Madam Ku Lee Chin</strong>
                 <small data-i18n="monitorSupervisor">Monitor Supervisor</small>
                 <div class="template-monitor-meta">
                     <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
                     <span><i class="bi bi-shield-check"></i> Review</span>
                 </div>
-                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+                <span class="open-dashboard-btn">
+                    <i class="bi bi-graph-up-arrow"></i>
+                    <b data-i18n="openDashboard">Open Dashboard</b>
+                    <i class="bi bi-arrow-right"></i>
+                </span>
             </button>
         </form>
 
