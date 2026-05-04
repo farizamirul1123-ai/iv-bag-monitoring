@@ -1,379 +1,453 @@
 (function () {
-    const chartRefs = {};
-    const weightChartPrefix = 'weightChart';
-    const statusClassMap = {
-        Normal: 'status-normal',
-        Low: 'status-low',
-        Critical: 'status-critical'
-    };
+    const charts = {};
+    const colors = { teal: 'rgba(6,152,169,1)', orange: 'rgba(255,123,24,1)', red: 'rgba(255,65,65,1)' };
 
-    function getCurrentLang() {
-        return document.body.dataset.initialLanguage || 'en';
+    function lang() { return document.body.dataset.initialLanguage || 'en'; }
+    function dict() { return (window.TRANSLATIONS && (TRANSLATIONS[lang()] || TRANSLATIONS.en)) || {}; }
+    function t(key, fallback) { return dict()[key] || fallback || key; }
+    function pad(v) { return String(v).padStart(2, '0'); }
+
+    function clock(date) {
+        let h = date.getHours();
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${pad(h)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${ampm}`;
     }
 
-    function t(key, fallback = '') {
-        const lang = getCurrentLang();
-        const dict = (window.TRANSLATIONS && TRANSLATIONS[lang]) || (window.TRANSLATIONS && TRANSLATIONS.en) || {};
-        return dict[key] || fallback || key;
-    }
-
-    function setLanguageVisual(lang) {
-        const dict = (window.TRANSLATIONS && TRANSLATIONS[lang]) || (window.TRANSLATIONS && TRANSLATIONS.en) || {};
-        document.documentElement.lang = lang;
-        document.querySelectorAll('[data-i18n]').forEach(el => {
-            const key = el.getAttribute('data-i18n');
-            if (dict[key]) el.textContent = dict[key];
-        });
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-            const key = el.getAttribute('data-i18n-placeholder');
-            if (dict[key]) el.setAttribute('placeholder', dict[key]);
-        });
-    }
-
-    function pad(value) { return String(value).padStart(2, '0'); }
-
-    function formatClock(date) {
-        let hours = date.getHours();
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12 || 12;
-        return `${pad(hours)}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${ampm}`;
-    }
-
-    function formatDate(date) {
-        return date.toLocaleDateString(getCurrentLang() === 'ms' ? 'ms-MY' : 'en-MY', {
+    function dateText(date) {
+        return date.toLocaleDateString(lang() === 'ms' ? 'ms-MY' : 'en-MY', {
             day: '2-digit', month: 'long', year: 'numeric'
         });
     }
 
-    function updateClocks() {
+    function updateClock() {
         const now = new Date();
-        const localClock = document.getElementById('localClock');
-        const localDate = document.getElementById('localDate');
-        if (localClock) localClock.textContent = formatClock(now);
-        if (localDate) localDate.textContent = formatDate(now);
+        ['localClock', 'monitorClock'].forEach(id => {
+            const e = document.getElementById(id);
+            if (e) e.textContent = clock(now);
+        });
+        ['localDate', 'monitorDate'].forEach(id => {
+            const e = document.getElementById(id);
+            if (e) e.textContent = dateText(now);
+        });
     }
 
-    function normaliseStatus(raw) {
-        if (!raw) return 'Normal';
-        const s = String(raw).toLowerCase();
-        if (s === 'critical' || s === 'kritikal') return 'Critical';
-        if (s === 'low' || s === 'rendah') return 'Low';
-        return 'Normal';
-    }
-
-    function statusLabel(raw) {
-        const s = normaliseStatus(raw);
-        const key = s.toLowerCase();
-        return t(key, s);
+    function translateStatic() {
+        document.documentElement.lang = lang() === 'ms' ? 'ms' : 'en';
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (t(key)) el.textContent = t(key);
+        });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            if (t(key)) el.setAttribute('placeholder', t(key));
+        });
     }
 
     function setText(selector, value) {
-        document.querySelectorAll(selector).forEach(el => { el.textContent = value; });
+        document.querySelectorAll(selector).forEach(e => { e.textContent = value; });
     }
 
-    function formatWeight(value) {
+    function normStatus(raw) {
+        const s = String(raw || '').toLowerCase();
+        if (s.includes('critical') || s.includes('kritikal')) return 'Critical';
+        if (s.includes('low') || s.includes('rendah')) return 'Low';
+        return 'Normal';
+    }
+
+    function statusLabel(status) {
+        const s = normStatus(status);
+        return t(s.toLowerCase(), s);
+    }
+
+    function displayPatientName(name, id) {
+        if (lang() === 'ms') {
+            if (String(name).trim().toLowerCase() === 'patient a') return t('patientA', 'Pesakit A');
+            if (String(name).trim().toLowerCase() === 'patient b') return t('patientB', 'Pesakit B');
+        }
+        return name || `${t('patient', 'Patient')} ${id}`;
+    }
+
+    function setStatusClass(el, status) {
+        el.classList.remove('status-normal', 'status-low', 'status-critical');
+        el.classList.add(status === 'Critical' ? 'status-critical' : status === 'Low' ? 'status-low' : 'status-normal');
+    }
+
+    function fmtWeight(value, unit) {
         const n = Math.max(0, Number(value || 0));
-        return `${Math.round(n).toLocaleString()} g`;
+        return `${Math.round(n).toLocaleString()} ${unit || 'g'}`;
     }
 
-    function cssVar(name, fallback) {
-        return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    function patientColor(id) { return Number(id) % 2 === 0 ? colors.orange : colors.teal; }
+
+    function makeGradient(ctx, color) {
+        const g = ctx.createLinearGradient(0, 0, 0, 180);
+        g.addColorStop(0, color.replace('1)', '.22)'));
+        g.addColorStop(1, color.replace('1)', '0)'));
+        return g;
     }
 
-    function createGradient(ctx, color) {
-        const gradient = ctx.createLinearGradient(0, 0, 0, 210);
-        gradient.addColorStop(0, color.replace('1)', '.22)'));
-        gradient.addColorStop(1, color.replace('1)', '0)'));
-        return gradient;
+    function niceMax(vals, min = 100) {
+        const list = Array.isArray(vals) ? vals : [vals];
+        const m = Math.max(min, ...list.map(v => Number(v || 0)));
+        const step = m > 1000 ? 250 : m > 500 ? 100 : 50;
+        return Math.ceil((m * 1.12) / step) * step;
     }
 
-    function chartBaseOptions(yTitle) {
+    function chartOptions() {
         return {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 450 },
-            layout: { padding: { top: 10, right: 14, bottom: 8, left: 8 } },
+            animation: { duration: 300 },
             interaction: { mode: 'index', intersect: false },
+            layout: { padding: { top: 4, right: 10, bottom: 0, left: 0 } },
             plugins: {
-                legend: { display: true, position: 'top', labels: { usePointStyle: true, boxWidth: 7, color: '#0a285c', font: { weight: 700 } } },
-                tooltip: { backgroundColor: '#08285a', padding: 12, cornerRadius: 12 }
+                legend: { display: false },
+                tooltip: { backgroundColor: '#082987', padding: 10, cornerRadius: 10 }
             },
             scales: {
-                x: { grid: { display: false }, ticks: { color: '#52677f', maxRotation: 0, autoSkip: true, maxTicksLimit: 8, padding: 8 } },
-                y: { beginAtZero: true, grid: { color: 'rgba(8, 40, 90, .08)' }, ticks: { color: '#52677f', padding: 8 }, title: { display: true, text: yTitle, color: '#52677f', font: { weight: 700 } } }
+                x: { grid: { display: false }, ticks: { color: '#405b9b', maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 11, weight: '600' } } },
+                y: { beginAtZero: true, grid: { color: 'rgba(8,41,135,.08)' }, ticks: { color: '#405b9b', font: { size: 11, weight: '600' } } }
             }
         };
     }
 
-    function niceMax(value, minimum = 100) {
-        const n = Math.max(Number(value || 0), minimum);
-        const step = n > 1000 ? 250 : n > 500 ? 100 : 50;
-        return Math.ceil((n * 1.12) / step) * step;
-    }
-
-    function relabelCharts() {
-        Object.values(chartRefs).forEach(chart => {
-            if (!chart) return;
-            chart.options.scales.y.title.text = chart.canvas && (chart.canvas.id === 'dropComparisonChart' || chart.canvas.id === 'monitorDropComparisonChart') ? t('dropsPerMin', 'Drops/min') : t('weight', 'Weight (g)');
-            if (chart.data.datasets && chart.canvas && chart.canvas.id !== 'dropComparisonChart') {
-                chart.data.datasets[0].label = t('weight', 'Weight (g)');
-            }
-            chart.resize();
-            chart.update('none');
-        });
-    }
-
-    function buildOrUpdateWeightChart(patient) {
-        const canvas = document.getElementById(weightChartPrefix + patient.id);
+    function createLine(canvasId, labels, values, color, label, yMin) {
+        const canvas = document.getElementById(canvasId);
         if (!canvas || !window.Chart) return;
-        let labels = (patient.readings || []).map(r => r.label);
-        let weights = (patient.readings || []).map(r => Math.max(0, Number(r.weight_g || 0)));
-        if (!labels.length) {
-            labels = [patient.last_update_time || formatClock(new Date())];
-            weights = [Math.max(0, Number(patient.current_weight_g || 0))];
-        }
         const ctx = canvas.getContext('2d');
-        const teal = Number(patient.id) % 2 === 0 ? 'rgba(255,134,46,1)' : 'rgba(0,153,168,1)';
-        const yMax = niceMax(Math.max(Number(patient.full_weight_g || 0), ...weights), 100);
-
-        if (!chartRefs[canvas.id]) {
-            chartRefs[canvas.id] = new Chart(canvas, {
+        const yMax = niceMax(values, yMin || 50);
+        if (!charts[canvasId]) {
+            charts[canvasId] = new Chart(ctx, {
                 type: 'line',
-                data: {
-                    labels,
-                    datasets: [{
-                        label: t('weight', 'Weight (g)'),
-                        data: weights,
-                        borderColor: teal,
-                        backgroundColor: createGradient(ctx, teal),
-                        borderWidth: 3,
-                        pointRadius: 2.5,
-                        pointHoverRadius: 5,
-                        pointHitRadius: 8,
-                        tension: .35,
-                        fill: true
-                    }]
-                },
-                options: chartBaseOptions(t('weight', 'Weight (g)'))
+                data: { labels, datasets: [{ label, data: values, borderColor: color, backgroundColor: makeGradient(ctx, color), borderWidth: 3, pointRadius: 2.2, pointHoverRadius: 5, tension: .32, fill: true }] },
+                options: chartOptions()
             });
-            chartRefs[canvas.id].options.scales.y.suggestedMax = yMax;
         } else {
-            const chart = chartRefs[canvas.id];
-            chart.data.labels = labels;
-            chart.data.datasets[0].label = t('weight', 'Weight (g)');
-            chart.data.datasets[0].data = weights;
-            chart.options.scales.y.suggestedMax = yMax;
-            chart.update();
+            charts[canvasId].data.labels = labels;
+            charts[canvasId].data.datasets[0].data = values;
+            charts[canvasId].data.datasets[0].borderColor = color;
+            charts[canvasId].data.datasets[0].backgroundColor = makeGradient(ctx, color);
+            charts[canvasId].data.datasets[0].label = label;
         }
+        charts[canvasId].options.scales.y.suggestedMax = yMax;
+        charts[canvasId].update();
     }
 
-    function buildOrUpdateDropChart(data) {
+    function createDropComparison(data) {
+        const canvas = document.getElementById('dropComparisonChart');
+        if (!canvas || !window.Chart) return;
         const labels = (data.drop_comparison && data.drop_comparison.labels) || [];
         const series = (data.drop_comparison && data.drop_comparison.series) || [];
-        const colors = ['rgba(0,153,168,1)', 'rgba(255,134,46,1)'];
-        const allDrops = series.flatMap(item => (item.drops || []).map(v => Math.max(0, Number(v || 0))));
-        const yMax = niceMax(Math.max(...allDrops, 0), 50);
-        const datasets = series.map((item, index) => ({
-            label: item.patient_name || `${t('patient', 'Patient')} ${index + 1}`,
-            data: (item.drops || []).map(v => Math.max(0, Number(v || 0))),
-            borderColor: colors[index % colors.length],
-            backgroundColor: colors[index % colors.length].replace('1)', '.08)'),
+        const datasets = series.map((s, i) => ({
+            label: displayPatientName(s.patient_name, s.patient_id) || `${t('patient', 'Patient')} ${i + 1}`,
+            data: (s.drops || []).map(v => Number(v || 0)),
+            borderColor: i % 2 ? colors.orange : colors.teal,
+            backgroundColor: 'transparent',
             borderWidth: 3,
-            pointRadius: 2.5,
+            pointRadius: 2.2,
             pointHoverRadius: 5,
             tension: .32,
             fill: false
         }));
-
-        ['dropComparisonChart', 'monitorDropComparisonChart'].forEach(id => {
-            const canvas = document.getElementById(id);
-            if (!canvas || !window.Chart) return;
-            if (!chartRefs[id]) {
-                chartRefs[id] = new Chart(canvas, {
-                    type: 'line',
-                    data: { labels, datasets },
-                    options: chartBaseOptions(t('dropsPerMin', 'Drops/min'))
-                });
-                chartRefs[id].options.scales.y.suggestedMax = yMax;
-            } else {
-                const chart = chartRefs[id];
-                chart.data.labels = labels;
-                chart.data.datasets = datasets;
-                chart.options.scales.y.title.text = t('dropsPerMin', 'Drops/min');
-                chart.options.scales.y.suggestedMax = yMax;
-                chart.update();
-            }
-        });
+        const all = datasets.flatMap(d => d.data);
+        const yMax = niceMax(all, 40);
+        if (!charts.dropComparisonChart) {
+            charts.dropComparisonChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    ...chartOptions(),
+                    plugins: { legend: { display: true, position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8, color: '#082987', font: { weight: '700' } } }, tooltip: { backgroundColor: '#082987', padding: 10, cornerRadius: 10 } }
+                }
+            });
+        } else {
+            charts.dropComparisonChart.data.labels = labels;
+            charts.dropComparisonChart.data.datasets = datasets;
+        }
+        charts.dropComparisonChart.options.scales.y.suggestedMax = yMax;
+        charts.dropComparisonChart.update();
     }
 
-    function updatePatientCard(patient) {
-        const status = normaliseStatus(patient.current_status);
-        const percent = Math.round(Number(patient.current_level_percent || 0));
-        const progressEls = document.querySelectorAll(`[data-patient-progress="${patient.id}"]`);
-        const levelEls = document.querySelectorAll(`[data-patient-level="${patient.id}"]`);
-        const statusEls = document.querySelectorAll(`[data-patient-status="${patient.id}"]`);
+    function updatePatient(p) {
+        const id = p.id;
+        const status = normStatus(p.current_status);
+        const pct = Math.round(Number(p.current_level_percent || 0));
+        const color = status === 'Critical' ? colors.red : status === 'Low' ? colors.orange : patientColor(id);
+        const name = displayPatientName(p.patient_name, id);
 
-        setText(`[data-patient-name="${patient.id}"]`, patient.patient_name);
-        setText(`[data-patient-chart-name="${patient.id}"]`, patient.patient_name);
-        setText(`[data-patient-code="${patient.id}"]`, patient.patient_code);
-        setText(`[data-patient-ward="${patient.id}"]`, patient.ward_number);
-        setText(`[data-patient-bed="${patient.id}"]`, patient.bed_number);
-        setText(`[data-patient-weight="${patient.id}"]`, formatWeight(patient.remaining_weight_g));
-        setText(`[data-patient-current-weight="${patient.id}"]`, formatWeight(patient.current_weight_g));
-        setText(`[data-patient-remaining-weight="${patient.id}"]`, formatWeight(patient.remaining_weight_g));
-        setText(`[data-patient-full-weight="${patient.id}"]`, formatWeight(patient.full_weight_g));
-        setText(`[data-patient-empty-weight="${patient.id}"]`, formatWeight(patient.empty_weight_g));
-        setText(`[data-patient-drop="${patient.id}"]`, Number(patient.current_drop_rate || 0).toFixed(0));
-        setText(`[data-patient-flow="${patient.id}"]`, Number(patient.current_flow_rate_ml_hr || 0).toFixed(0));
-        setText(`[data-patient-updated="${patient.id}"]`, patient.last_update_full || patient.last_update_time || '--:--:--');
+        setText(`[data-patient-name="${id}"]`, name);
+        setText(`[data-patient-chart-name="${id}"]`, name);
+        setText(`[data-patient-code="${id}"]`, p.patient_code || `PT${String(id).padStart(3, '0')}`);
+        setText(`[data-patient-ward="${id}"]`, p.ward_number || 'Ward 3A');
+        setText(`[data-patient-bed="${id}"]`, p.bed_number || '-');
+        setText(`[data-patient-current-weight="${id}"]`, fmtWeight(p.current_weight_g, 'g'));
+        setText(`[data-patient-remaining-weight="${id}"]`, fmtWeight(p.remaining_weight_g, 'ml'));
+        setText(`[data-patient-drop="${id}"]`, Math.round(Number(p.current_drop_rate || 0)));
+        setText(`[data-patient-flow="${id}"]`, Math.round(Number(p.current_flow_rate_ml_hr || 0)));
+        setText(`[data-patient-updated="${id}"]`, p.last_update_time || p.last_update_full || '-');
 
-        levelEls.forEach(level => {
-            level.textContent = `${percent}%`;
-            level.classList.remove('status-text-normal', 'status-text-low', 'status-text-critical');
-            level.classList.add(`status-text-${status.toLowerCase()}`);
+        document.querySelectorAll(`[data-patient-level="${id}"]`).forEach(e => { e.textContent = `${pct}%`; e.style.color = color; });
+        document.querySelectorAll(`[data-patient-progress="${id}"]`).forEach(e => { e.style.width = `${Math.max(0, Math.min(100, pct))}%`; e.style.background = color; });
+        document.querySelectorAll(`[data-patient-fluid="${id}"]`).forEach(e => {
+            e.style.height = `${Math.max(7, Math.min(82, pct * .75))}px`;
+            e.style.background = Number(id) % 2 === 0 ? 'rgba(255,123,24,.55)' : 'rgba(26,193,224,.45)';
         });
-        progressEls.forEach(progress => {
-            progress.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-            progress.style.background = status === 'Critical' ? cssVar('--red', '#f2414a') : status === 'Low' ? cssVar('--orange', '#ff862e') : cssVar('--teal', '#0099a8');
-        });
-        statusEls.forEach(statusEl => {
-            statusEl.textContent = statusLabel(status);
-            statusEl.className = `status-pill ${statusClassMap[status]}`;
-        });
+        document.querySelectorAll(`[data-patient-status="${id}"]`).forEach(e => { e.textContent = statusLabel(status); setStatusClass(e, status); });
+
+        const readings = p.readings || [];
+        const labels = readings.length ? readings.map(r => r.label) : [p.last_update_time || clock(new Date())];
+        const weights = readings.length ? readings.map(r => Number(r.weight_g || 0)) : [Number(p.current_weight_g || 0)];
+        const drops = readings.length ? readings.map(r => Number(r.drops_per_min || 0)) : [Number(p.current_drop_rate || 0)];
+        createLine(`dashWeightChart${id}`, labels, weights, patientColor(id), t('weightG', 'Weight (g)'), 100);
+        createLine(`monitorWeightChart${id}`, labels, weights, patientColor(id), t('weightG', 'Weight (g)'), 100);
+        createLine(`monitorDropChart${id}`, labels, drops, patientColor(id), t('dropsPerMin', 'Drops/min'), 40);
+        renderLiveLog(id, readings);
     }
 
-    function alertTitle(alert) {
-        const patientName = alert.patient_name || `${t('patient', 'Patient')} ${alert.patient_id || ''}`;
-        const type = normaliseStatus(alert.alert_type);
-        if (type === 'Critical') return `${patientName} – ${t('critical', 'Critical')}`;
-        if (type === 'Low') return `${patientName} – ${t('low', 'Low')}`;
-        return `${patientName} – ${t('stable', 'Stable')}`;
+    function renderLiveLog(id, readings) {
+        const body = document.getElementById(`liveLog${id}`);
+        if (!body) return;
+        const rows = (readings || []).slice(-5).reverse();
+        body.innerHTML = rows.map(r => `<tr><td>${r.label || '-'}</td><td>${Math.round(Number(r.weight_g || 0))}</td><td>${Math.round(Number(r.drops_per_min || 0))}</td><td>${Math.round(Number(r.flow_rate_ml_hr || 0))}</td><td>${Math.round(Number(r.level_percent || 0))}</td></tr>`).join('') || `<tr><td colspan="5">${t('noAlerts', 'No data')}</td></tr>`;
     }
 
-    function alertDescription(alert) {
-        const type = normaliseStatus(alert.alert_type);
-        if (type === 'Critical') return t('criticalMessage', 'IV level is critical. Immediate action required.');
-        if (type === 'Low') return t('lowMessage', 'IV level is low. Please monitor.');
+    function alertTitle(a) {
+        const name = displayPatientName(a.patient_name, a.patient_id) || `${t('patient', 'Patient')} ${a.patient_id || ''}`;
+        const s = normStatus(a.alert_type);
+        return `${name} – ${statusLabel(s)}`;
+    }
+
+    function alertDesc(a) {
+        const s = normStatus(a.alert_type);
+        if (s === 'Critical') return t('criticalMessage', 'IV level is critical. Immediate action required.');
+        if (s === 'Low') return t('lowMessage', 'IV level is low. Please monitor.');
         return t('stableMessage', 'All monitored IV bags are within safe range.');
     }
 
-    function updateNotifications(data) {
-        const list = document.getElementById('notificationList');
-        const alertCount = document.getElementById('alertCount');
-        const alertBadge = document.getElementById('alertBadge');
-        const mobileBadge = document.getElementById('mobileAlertBadge');
-        const reportAlertCount = document.getElementById('reportAlertCount');
-        const alerts = data.alerts || [];
-        [alertCount, alertBadge, mobileBadge, reportAlertCount].forEach(el => { if (el) el.textContent = alerts.length; });
-        if (!list) return;
-
-        if (!alerts.length) {
-            list.innerHTML = `
-                <div class="notification-item success">
-                    <i class="bi bi-check-circle-fill"></i>
-                    <div><span>${data.server_time || ''}</span><strong>${t('systemStable', 'System Stable')}</strong><small>${t('stableMessage', 'All monitored IV bags are within safe range.')}</small></div>
-                </div>`;
-            return;
-        }
-
-        list.innerHTML = alerts.map(alert => {
-            const type = normaliseStatus(alert.alert_type);
-            const danger = type === 'Critical';
-            const icon = danger ? 'bi-exclamation-triangle-fill' : 'bi-exclamation-circle-fill';
-            const typeClass = danger ? 'danger' : 'warning';
-            return `
-                <div class="notification-item ${typeClass}">
-                    <i class="bi ${icon}"></i>
-                    <div>
-                        <span>${alert.created_at}</span>
-                        <strong>${alertTitle(alert)}</strong>
-                        <small>${alertDescription(alert)}</small>
-                    </div>
-                </div>`;
-        }).join('');
+    function alertIcon(status) {
+        if (status === 'Critical') return 'bi-exclamation-triangle-fill';
+        if (status === 'Low') return 'bi-clock';
+        return 'bi-check-circle';
     }
 
-    function updateSystemInfo(data) {
-        const source = document.getElementById('dataSource');
-        if (source && data.system) source.textContent = data.system.data_source || 'PostgreSQL / Render';
+    function alertClass(status) {
+        if (status === 'Critical') return 'danger';
+        if (status === 'Low') return 'warning';
+        return 'success';
+    }
+
+    function alertItemHTML(a, index, full) {
+        const s = normStatus(a.alert_type);
+        const ack = a.acknowledged ? `<span class="ack-pill">${t('acknowledged', 'Acknowledged')}</span>` : '';
+        const item = `<button type="button" class="notification-item ${alertClass(s)}" data-alert-index="${index}"><i class="bi ${alertIcon(s)}"></i><div><span>${a.created_at_full || a.created_at || ''}</span><strong>${alertTitle(a)}</strong><small>${a.message || alertDesc(a)}</small><em>${alertDesc(a)}</em>${ack}</div><i class="bi bi-chevron-right"></i></button>`;
+        if (!full) return item;
+        const form = (!a.acknowledged && a.id) ? `<form method="post" action="/acknowledge-alert/${a.id}"><button type="submit"><i class="bi bi-check2-circle"></i> ${t('acknowledge', 'Acknowledge')}</button></form>` : '';
+        return `<div class="alert-row-wrap">${item}${form}</div>`;
+    }
+
+    function renderAlertDetail(alert) {
+        const box = document.getElementById('alertDetailCard');
+        if (!box) return;
+        if (!alert) {
+            box.innerHTML = `<h3>${t('notificationDetails', 'Notification Details')}</h3><div class="empty-detail-state"><i class="bi bi-bell"></i><p>${t('selectAlertPrompt', 'Click a notification on the left to view details.')}</p></div>`;
+            return;
+        }
+        const s = normStatus(alert.alert_type);
+        box.innerHTML = `
+            <h3>${t('notificationDetails', 'Notification Details')}</h3>
+            <div class="detail-row"><span>${t('patient', 'Patient')}</span><strong>${displayPatientName(alert.patient_name, alert.patient_id)}</strong></div>
+            <div class="detail-row"><span>${t('alertType', 'Alert Type')}</span><strong>${statusLabel(s)}</strong></div>
+            <div class="detail-row"><span>${t('ivLevel', 'IV Level')}</span><strong>${Math.round(Number(alert.level_percent || 0))}%</strong></div>
+            <div class="detail-row"><span>${t('alertTime', 'Alert Time')}</span><strong>${alert.created_at_full || alert.created_at || '-'}</strong></div>
+            <div class="detail-row full"><span>${t('message', 'Message')}</span><p>${alert.message || alertDesc(alert)}</p></div>
+        `;
+    }
+
+    function renderNotifications(data) {
+        const alerts = data.alerts || [];
+        ['alertCount', 'sideAlertBadge', 'mobileAlertBadge', 'reportAlertCount'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = alerts.length; });
+        const compact = alerts.length ? alerts.slice(0, 3).map((a, i) => alertItemHTML(a, i, false)).join('') : `<button type="button" class="notification-item success"><i class="bi bi-check-circle"></i><div><span>${data.server_time || ''}</span><strong>${t('systemStable', 'System Stable')}</strong><small>${t('stableMessage', 'All monitored IV bags are within safe range.')}</small></div><i class="bi bi-chevron-right"></i></button>`;
+        const full = alerts.length ? alerts.map((a, i) => alertItemHTML(a, i, true)).join('') : `<button type="button" class="notification-item success"><i class="bi bi-check-circle"></i><div><span>${data.server_time || ''}</span><strong>${t('systemStable', 'System Stable')}</strong><small>${t('stableMessage', 'All monitored IV bags are within safe range.')}</small></div><i class="bi bi-chevron-right"></i></button>`;
+        const n = document.getElementById('notificationList');
+        if (n) n.innerHTML = compact;
+        const a = document.getElementById('alertPageList');
+        if (a) a.innerHTML = full;
+        window.__ALERTS__ = alerts;
+        if (Number.isInteger(window.__ACTIVE_ALERT_INDEX__) && alerts[window.__ACTIVE_ALERT_INDEX__]) {
+            renderAlertDetail(alerts[window.__ACTIVE_ALERT_INDEX__]);
+            document.querySelectorAll('[data-alert-index]').forEach(el => el.classList.toggle('active', Number(el.dataset.alertIndex) === window.__ACTIVE_ALERT_INDEX__));
+        } else {
+            renderAlertDetail(null);
+        }
+    }
+
+    function updateSystem(data) {
+        const src = (data.system && data.system.data_source) || 'PostgreSQL / Render Cloud';
+        ['dataSource', 'settingsDataSource'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = src; });
     }
 
     function updateDashboard(data) {
         if (!data || !Array.isArray(data.patients)) return;
-        data.patients.forEach(patient => {
-            updatePatientCard(patient);
-            buildOrUpdateWeightChart(patient);
-        });
-        buildOrUpdateDropChart(data);
-        updateNotifications(data);
-        updateSystemInfo(data);
+        translateStatic();
+        data.patients.forEach(updatePatient);
+        createDropComparison(data);
+        renderNotifications(data);
+        updateSystem(data);
     }
 
-    async function refreshDashboardData() {
+    async function refresh(showToast) {
         if (!document.getElementById('dashboardRoot')) return;
         try {
-            const response = await fetch('/api/dashboard-data', { cache: 'no-store' });
-            if (!response.ok) return;
-            const data = await response.json();
+            const r = await fetch('/api/dashboard-data', { cache: 'no-store' });
+            if (!r.ok) return;
+            const data = await r.json();
             updateDashboard(data);
-        } catch (error) {
-            console.error('Dashboard refresh failed:', error);
-        }
+            if (showToast) toast(t('refreshDone', 'Dashboard data refreshed.'));
+        } catch (e) { console.error('Dashboard refresh failed', e); }
     }
 
-    function resizeChartsSoon() {
-        window.setTimeout(() => {
-            Object.values(chartRefs).forEach(chart => {
-                if (chart) {
-                    chart.resize();
-                    chart.update('none');
-                }
-            });
-        }, 80);
+    function resizeCharts() {
+        setTimeout(() => Object.values(charts).forEach(c => { if (c) { c.resize(); c.update('none'); } }), 80);
     }
 
     function showSection(name) {
-        const sectionName = name || 'dashboard';
-        document.querySelectorAll('.dashboard-section').forEach(section => {
-            section.classList.toggle('active', section.dataset.section === sectionName);
-        });
-        document.querySelectorAll('[data-section-target]').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.sectionTarget === sectionName);
-        });
-        resizeChartsSoon();
+        const target = name || 'dashboard';
+        document.querySelectorAll('.app-section').forEach(s => s.classList.toggle('active', s.dataset.section === target));
+        document.querySelectorAll('[data-section-target]').forEach(b => b.classList.toggle('active', b.dataset.sectionTarget === target));
+        resizeCharts();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function setupDashboardSections() {
-        if (!document.getElementById('dashboardRoot')) return;
-        document.querySelectorAll('[data-section-target]').forEach(btn => {
-            btn.addEventListener('click', () => showSection(btn.dataset.sectionTarget));
-        });
-        showSection('dashboard');
-    }
-
-    function setupMonitorSelection() {
-        const form = document.querySelector('.monitor-card-grid');
-        if (!form) return;
-        form.querySelectorAll('.monitor-select-card').forEach(card => {
-            card.addEventListener('click', () => {
-                const input = card.querySelector('input[type="radio"]');
-                if (input) input.checked = true;
-                window.setTimeout(() => form.submit(), 120);
+    function setupSections() {
+        document.querySelectorAll('[data-section-target]').forEach(b => {
+            b.addEventListener('click', e => {
+                const target = b.dataset.sectionTarget;
+                if (target) { e.preventDefault(); showSection(target); }
             });
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-        setLanguageVisual(getCurrentLang());
-        updateClocks();
-        setInterval(updateClocks, 1000);
-        setupMonitorSelection();
-        setupDashboardSections();
+    function setupPatientFilter() {
+        document.querySelectorAll('[data-patient-filter]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const value = btn.dataset.patientFilter;
+                document.querySelectorAll('[data-patient-filter]').forEach(b => b.classList.toggle('active', b === btn));
+                document.querySelectorAll('[data-monitor-patient-panel]').forEach(panel => {
+                    panel.style.display = (value === 'all' || panel.dataset.monitorPatientPanel === value) ? '' : 'none';
+                });
+                resizeCharts();
+            });
+        });
+    }
 
+    function setupAlertClicks() {
+        document.addEventListener('click', e => {
+            const item = e.target.closest('[data-alert-index]');
+            if (!item) return;
+            if (e.target.closest('form')) return;
+            const idx = Number(item.dataset.alertIndex || 0);
+            window.__ACTIVE_ALERT_INDEX__ = idx;
+            document.querySelectorAll('[data-alert-index]').forEach(el => el.classList.toggle('active', Number(el.dataset.alertIndex) === idx));
+            if (window.__ALERTS__) renderAlertDetail(window.__ALERTS__[idx]);
+            if (item.closest('#notificationList')) showSection('alerts');
+        });
+    }
+
+    function savePreferences() {
+        const states = Array.from(document.querySelectorAll('[data-toggle-pref]')).map(btn => btn.querySelector('.toggle') && btn.querySelector('.toggle').classList.contains('on'));
+        localStorage.setItem('ivNotificationPreferences', JSON.stringify(states));
+    }
+
+    function loadPreferences() {
+        try {
+            const states = JSON.parse(localStorage.getItem('ivNotificationPreferences') || 'null');
+            if (!Array.isArray(states)) return;
+            document.querySelectorAll('[data-toggle-pref]').forEach((btn, i) => {
+                const toggle = btn.querySelector('.toggle');
+                if (toggle) toggle.classList.toggle('on', Boolean(states[i]));
+            });
+        } catch (e) { console.warn('Preference load failed', e); }
+    }
+
+    function userRowHTML(user) {
+        const initial = (user.name || 'U').trim().charAt(0).toUpperCase();
+        const roleKey = String(user.role || 'Staff').toLowerCase() === 'administrator' ? 'administrator' : String(user.role || 'Staff').toLowerCase() === 'viewer' ? 'viewer' : 'staff';
+        return `<tr data-added-user><td><b>${initial}</b><span><strong>${user.name}</strong><small>${user.email}</small></span></td><td><em>${t(roleKey, user.role || 'Staff')}</em></td><td><button type="button" data-demo-button>${t('manage', 'Manage')}</button></td></tr>`;
+    }
+
+    function loadUsers() {
+        const body = document.getElementById('userTableBody');
+        if (!body) return;
+        body.querySelectorAll('[data-added-user]').forEach(row => row.remove());
+        try {
+            const users = JSON.parse(localStorage.getItem('ivAddedUsers') || '[]');
+            users.forEach(user => body.insertAdjacentHTML('beforeend', userRowHTML(user)));
+        } catch (e) { console.warn('User load failed', e); }
+    }
+
+    function setupAddUser() {
+        const form = document.getElementById('addUserForm');
+        document.querySelectorAll('[data-action="open-add-user"]').forEach(btn => btn.addEventListener('click', () => {
+            if (!form) return;
+            form.hidden = !form.hidden;
+            if (!form.hidden) form.querySelector('input[name="name"]')?.focus();
+        }));
+        if (!form) return;
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            const user = {
+                name: form.elements.name.value.trim(),
+                email: form.elements.email.value.trim(),
+                role: form.elements.role.value
+            };
+            if (!user.name || !user.email) return;
+            const users = JSON.parse(localStorage.getItem('ivAddedUsers') || '[]');
+            users.push(user);
+            localStorage.setItem('ivAddedUsers', JSON.stringify(users));
+            form.reset();
+            form.hidden = true;
+            loadUsers();
+            toast(t('userAdded', 'User added to this screen.'));
+        });
+    }
+
+    function setupButtons() {
+        document.querySelectorAll('[data-action="refresh-dashboard"]').forEach(btn => btn.addEventListener('click', () => refresh(true)));
+        document.querySelectorAll('[data-action="save-settings"]').forEach(btn => btn.addEventListener('click', () => { savePreferences(); toast(t('preferencesSavedBrowser', 'Notification preferences saved on this browser.')); }));
+        document.querySelectorAll('[data-action="reset-settings"]').forEach(btn => btn.addEventListener('click', () => { localStorage.removeItem('ivNotificationPreferences'); document.querySelectorAll('[data-toggle-pref] .toggle').forEach((t,i) => t.classList.toggle('on', i !== 3)); toast(t('resetDone', 'Settings restored on this screen.')); }));
+        document.querySelectorAll('[data-demo-button]').forEach(btn => btn.addEventListener('click', () => toast(t('demoButtonNote', 'This button is active for dashboard demonstration.'))));
+        document.querySelectorAll('[data-toggle-pref]').forEach(btn => btn.addEventListener('click', () => {
+            const toggle = btn.querySelector('.toggle');
+            if (toggle) toggle.classList.toggle('on');
+            savePreferences();
+            toast(t('toggleUpdated', 'Preference updated.'));
+        }));
+        setupAddUser();
+    }
+
+    function toast(message) {
+        const box = document.getElementById('toastMessage');
+        if (!box) return;
+        box.textContent = message;
+        box.classList.add('show');
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(() => box.classList.remove('show'), 2200);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        translateStatic();
+        updateClock();
+        setInterval(updateClock, 1000);
+        setupSections();
+        setupPatientFilter();
+        setupAlertClicks();
+        loadPreferences();
+        loadUsers();
+        setupButtons();
         if (window.INITIAL_DASHBOARD_DATA) {
             updateDashboard(window.INITIAL_DASHBOARD_DATA);
-            relabelCharts();
-            setInterval(refreshDashboardData, 5000);
+            setInterval(() => refresh(false), 5000);
         }
     });
 })();

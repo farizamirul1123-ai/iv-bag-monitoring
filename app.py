@@ -29,7 +29,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-MONITOR_OPTIONS = ["Fariz", "Hareny", "Madam Ku Lee Chin"]
+MONITOR_OPTIONS = ["Fariz Amirul", "Hareny", "Madam Ku Lee Chin"]
 DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
 DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
 
@@ -356,13 +356,14 @@ def dashboard():
         return redirect(url_for("index"))
 
     patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
-    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(6).all()
+    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(50).all()
 
     return render_template(
         "dashboard.html",
         patients=patients,
         alerts=alerts,
         now_utc=utcnow(),
+        monitor_name=session.get("monitor_name", "Monitor"),
         dashboard_data=build_dashboard_payload(),
     )
 
@@ -556,7 +557,7 @@ def patient_payload(patient, readings=None):
 def build_dashboard_payload():
     patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
     patient_items = [patient_payload(p) for p in patients]
-    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(6).all()
+    alerts = Alert.query.order_by(desc(Alert.created_at)).limit(50).all()
 
     chart_labels = []
     if patient_items:

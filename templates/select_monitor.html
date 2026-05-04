@@ -1,68 +1,125 @@
 {% extends 'base.html' %}
 {% block title %}Select Monitor{% endblock %}
+
 {% block content %}
-<div class="site-shell selection-page">
-    <header class="brand-header">
-        <div class="brand-logos">
-            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik Seberang Perai" class="brand-logo psp-logo">
-            <span class="logo-divider"></span>
-            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="brand-logo kpm-logo">
+<div class="public-page public-select-page template-select-page">
+    <header class="public-top-header select-top-header">
+        <div class="public-logo-group">
+            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik" class="public-logo psp-public-logo">
+            <span class="public-divider"></span>
+            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="public-logo kpm-public-logo">
+            <span class="public-divider public-divider-last"></span>
         </div>
-        <a class="system-mark" href="{{ url_for('index') }}">
-            <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
+
+        <a href="{{ url_for('index') }}" class="public-system-brand">
+            <span class="public-system-icon"><i class="bi bi-prescription2"></i></span>
             <span>
                 <strong>IV Monitoring System</strong>
-                <small data-i18n="systemSubtitle">Sistem Pemantauan IV Pintar</small>
+                <small data-i18n="systemSubtitlePublic">Smart IV Monitoring System</small>
             </span>
         </a>
-        {% include '_language_switch.html' %}
+
+        <div class="public-language-box">
+            {% include '_language_switch.html' %}
+        </div>
     </header>
 
-    <main class="selection-layout">
-        <section class="selection-main">
-            <div class="stepper">
-                <div class="step done"><b>1</b><span data-i18n="welcome">Welcome</span></div>
-                <div class="step active"><b>2</b><span data-i18n="monitorSelection">Monitor Selection</span></div>
-                <div class="step"><b>3</b><span data-i18n="dashboard">Dashboard</span></div>
-            </div>
-
-            <h1 data-i18n="selectMonitor">Select Monitor</h1>
-            <p class="lead-text" data-i18n="chooseMonitor">Choose who will monitor the IV system. You will be redirected to the real-time dashboard.</p>
-
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}<div class="alert alert-warning rounded-4">{{ messages[0] }}</div>{% endif %}
-            {% endwith %}
-
-            <form method="post" action="{{ url_for('login') }}" class="monitor-card-grid">
-                {% set roles = {'Fariz':'monitorSupervisor','Hareny':'projectTeam','Madam Ku Lee Chin':'monitorSupervisor'} %}
-                {% set icons = {'Fariz':'person-badge','Hareny':'person-hearts','Madam Ku Lee Chin':'person-check'} %}
-                {% for monitor in monitor_options %}
-                <label class="monitor-select-card">
-                    <input type="radio" name="monitor_name" value="{{ monitor }}" {% if loop.first %}checked{% endif %}>
-                    <span class="monitor-card-body">
-                        <span class="profile-avatar avatar-{{ loop.index }}"><i class="bi bi-{{ icons[monitor] }}"></i></span>
-                        <strong>{{ monitor }}</strong>
-                        <small data-i18n="{{ roles[monitor] }}">{{ roles[monitor] }}</small>
-                        <span class="open-dashboard"><i class="bi bi-graph-up-arrow"></i> <span data-i18n="openDashboard">Open Dashboard</span> <i class="bi bi-arrow-right"></i></span>
+    <main class="template-select-shell">
+        <section class="template-select-head">
+            <div class="template-stepper">
+                <div class="template-step done">
+                    <b>1</b>
+                    <span>
+                        <strong data-i18n="welcomeStep">Welcome</strong>
+                        <small data-i18n="welcomeStepSub">Welcome</small>
                     </span>
-                </label>
-                {% endfor %}
-                <button type="submit" class="d-none" id="hiddenSubmit" data-i18n="openDashboard">Open Dashboard</button>
-            </form>
-        </section>
-
-        <aside class="selection-visual">
-            <div class="mini-hospital-screen">
-                {% include 'partials_iv_bag.html' ignore missing %}
-                <div class="monitor-device">
-                    <div class="screen-line green"></div><div class="screen-line cyan"></div><div class="screen-line amber"></div>
-                    <b data-i18n="live">LIVE</b><small>IV Data</small>
+                </div>
+                <i></i>
+                <div class="template-step active">
+                    <b>2</b>
+                    <span>
+                        <strong data-i18n="monitorSelectionStep">Monitor Selection</strong>
+                        <small data-i18n="monitorSelectionStepSub">Select Monitor</small>
+                    </span>
+                </div>
+                <i></i>
+                <div class="template-step">
+                    <b>3</b>
+                    <span>
+                        <strong data-i18n="dashboardStep">Dashboard</strong>
+                        <small data-i18n="dashboardStepSub">Dashboard</small>
+                    </span>
                 </div>
             </div>
-            <div class="info-bubble selection-info"><i class="bi bi-info-circle-fill"></i><span data-i18n="chooseMonitor">Select a monitor to access the real-time dashboard.</span></div>
-        </aside>
-    </main>
 
-    <footer class="site-footer"><i class="bi bi-shield-plus"></i> <b data-i18n="finalYearProject">Final Year Project Dashboard</b> <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
+            <div class="select-heading-block template-heading-block">
+                <h1 data-i18n="selectMonitorTitle">Select Monitor</h1>
+                <div class="public-accent"></div>
+                <p data-i18n="selectMonitorDesc">Choose who will monitor the IV system. You will be redirected to their dashboard.</p>
+            </div>
+        </section>
+
+        <form method="post" action="{{ url_for('login') }}" class="template-monitor-grid">
+            <button type="submit" name="monitor_name" value="Fariz Amirul" class="template-monitor-card featured-monitor-card">
+                <span class="template-monitor-tag">Primary Monitor</span>
+                <span class="monitor-photo-wrap"><img src="{{ url_for('static', filename='img/profile-fariz.png') }}" alt="Fariz Amirul" class="monitor-photo"></span>
+                <strong>Fariz Amirul</strong>
+                <small data-i18n="monitorSupervisor">Monitor Supervisor</small>
+                <div class="template-monitor-meta">
+                    <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
+                    <span><i class="bi bi-broadcast-pin"></i> <span data-i18n="live">LIVE</span></span>
+                </div>
+                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+            </button>
+
+            <button type="submit" name="monitor_name" value="Hareny" class="template-monitor-card empty-photo-card">
+                <span class="template-monitor-tag alt">Team Member</span>
+                <span class="monitor-photo-wrap monitor-photo-empty"><i class="bi bi-person-plus"></i><em data-i18n="photoPending">Photo Pending</em></span>
+                <strong>Hareny</strong>
+                <small data-i18n="projectTeam">Project Team</small>
+                <div class="template-monitor-meta">
+                    <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
+                    <span><i class="bi bi-clipboard-data"></i> IV Monitoring</span>
+                </div>
+                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+            </button>
+
+            <button type="submit" name="monitor_name" value="Madam Ku Lee Chin" class="template-monitor-card">
+                <span class="template-monitor-tag">Supervisor</span>
+                <span class="monitor-photo-wrap"><img src="{{ url_for('static', filename='img/profile-madam.png') }}" alt="Madam Ku Lee Chin" class="monitor-photo"></span>
+                <strong>Madam Ku Lee Chin</strong>
+                <small data-i18n="monitorSupervisor">Monitor Supervisor</small>
+                <div class="template-monitor-meta">
+                    <span><i class="bi bi-display"></i> <span data-i18n="dashboard">Dashboard</span></span>
+                    <span><i class="bi bi-shield-check"></i> Review</span>
+                </div>
+                <span class="open-dashboard-btn"><i class="bi bi-graph-up-arrow"></i><b data-i18n="openDashboard">Open Dashboard</b><i class="bi bi-arrow-right"></i></span>
+            </button>
+        </form>
+
+        <section class="template-select-info-row">
+            <article>
+                <i class="bi bi-shield-check"></i>
+                <div>
+                    <strong>Secure Access</strong>
+                    <span>Only selected monitor accounts can open the dashboard page.</span>
+                </div>
+            </article>
+            <article>
+                <i class="bi bi-bell"></i>
+                <div>
+                    <strong data-i18n="notifications">Notifications</strong>
+                    <span data-i18n="selectInfo">Selecting a monitor will open their real-time dashboard.</span>
+                </div>
+            </article>
+            <article>
+                <i class="bi bi-file-earmark-excel"></i>
+                <div>
+                    <strong data-i18n="exportExcel">Export Excel</strong>
+                    <span>Patient readings and alerts can be exported from the dashboard.</span>
+                </div>
+            </article>
+        </section>
+    </main>
 </div>
 {% endblock %}

@@ -1,59 +1,178 @@
 {% extends 'base.html' %}
 {% block title %}Welcome to IV Monitoring{% endblock %}
+
 {% block content %}
-<div class="site-shell landing-page">
-    <header class="brand-header">
-        <div class="brand-logos">
-            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik Seberang Perai" class="brand-logo psp-logo">
-            <span class="logo-divider"></span>
-            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="brand-logo kpm-logo">
+<div class="public-page public-landing-page template-landing-page">
+    <header class="public-top-header">
+        <div class="public-logo-group">
+            <img src="{{ url_for('static', filename='img/psp-logo.png') }}" alt="Politeknik" class="public-logo psp-public-logo">
+            <span class="public-divider"></span>
+            <img src="{{ url_for('static', filename='img/kpm-logo.png') }}" alt="Kementerian Pendidikan" class="public-logo kpm-public-logo">
+            <span class="public-divider public-divider-last"></span>
         </div>
-        <a class="system-mark" href="{{ url_for('index') }}">
-            <span class="iv-icon"><i class="bi bi-prescription2"></i></span>
+
+        <a href="{{ url_for('index') }}" class="public-system-brand">
+            <span class="public-system-icon"><i class="bi bi-prescription2"></i></span>
             <span>
                 <strong>IV Monitoring System</strong>
-                <small data-i18n="systemSubtitle">Sistem Pemantauan IV Pintar</small>
+                <small data-i18n="systemSubtitlePublic">Smart IV Monitoring System</small>
             </span>
         </a>
-        {% include '_language_switch.html' %}
+
+        <div class="public-language-box">
+            {% include '_language_switch.html' %}
+        </div>
     </header>
 
-    <main class="hero-section">
-        <div class="hero-copy">
-            <div class="hero-kicker" data-i18n="finalYearProject">Final Year Project Dashboard</div>
-            <h1 data-i18n="welcomeTitle">Welcome to IV Monitoring</h1>
-            <p class="hero-subtitle" data-i18n="welcomeSubtitle">Smart IV Monitoring System</p>
-            <div class="accent-line"></div>
-            <p class="hero-text" data-i18n="welcomeText">A smart solution for real-time intravenous (IV) monitoring. Designed for accurate patient observation, cloud data storage, instant alerts, and better clinical workflow.</p>
+    <main class="landing-template-shell">
+        <section class="landing-template-copy">
+            <div class="public-kicker" data-i18n="finalYearDashboard">Final Year Project Dashboard</div>
+            <h1 data-i18n="landingWelcomeTitle">Welcome to IV Monitoring</h1>
+            <p class="public-hero-subtitle" data-i18n="landingSubtitle">Smart IV Monitoring System</p>
+            <div class="public-accent"></div>
+            <p class="public-hero-text" data-i18n="landingDescription">
+                A smart solution for real-time intravenous (IV) monitoring. Empowering healthcare with accurate data, instant alerts, and better patient care.
+            </p>
 
-            <a class="start-card" href="{{ url_for('select_monitor') }}">
-                <span class="touch-icon"><i class="bi bi-hand-index-thumb"></i></span>
-                <span class="start-copy">
-                    <strong data-i18n="tapStart">Tap to Start</strong>
-                    <small data-i18n="selectMonitorToView">Select a monitor to view real-time data</small>
-                </span>
-                <span class="start-arrow"><i class="bi bi-arrow-right"></i></span>
-            </a>
-        </div>
+            <div class="landing-copy-actions">
+                <a href="{{ url_for('select_monitor') }}" class="public-start-card template-start-card">
+                    <span class="public-touch-icon"><i class="bi bi-hand-index-thumb"></i></span>
+                    <span class="public-start-copy">
+                        <strong data-i18n="tapStart">Tap to Start</strong>
+                        <small data-i18n="tapStartDesc">Select a monitor to view real-time data</small>
+                    </span>
+                    <span class="public-start-arrow"><i class="bi bi-arrow-right"></i></span>
+                </a>
 
-        <a class="iv-hero-visual" href="{{ url_for('select_monitor') }}" aria-label="Open monitor selection">
-            <div class="hospital-blur"></div>
-            {% include 'partials_iv_bag.html' ignore missing %}
-            <div class="info-bubble"><i class="bi bi-info-circle-fill"></i><span data-i18n="infoOpenMonitor">Click the IV bag or tap the button to open monitor selection.</span></div>
-        </a>
+                <article class="supervisor-highlight-card template-supervisor-card">
+                    <span class="supervisor-photo"><img src="{{ url_for('static', filename='img/profile-madam.png') }}" alt="Madam Ku Lee Chin"></span>
+                    <span class="supervisor-copy">
+                        <small data-i18n="supervisorTitle">Project Supervisor</small>
+                        <strong>Madam Ku Lee Chin</strong>
+                        <em data-i18n="supervisorDesc">Smart IV Monitoring System supervision and project guidance.</em>
+                    </span>
+                </article>
+            </div>
+        </section>
+
+        <section class="landing-template-preview">
+            <div class="landing-preview-backdrop"></div>
+            <div class="landing-preview-glow landing-preview-glow-a"></div>
+            <div class="landing-preview-glow landing-preview-glow-b"></div>
+
+            <div class="dashboard-preview-card">
+                <div class="preview-window-bar">
+                    <span></span><span></span><span></span>
+                    <b>IV Monitoring Dashboard Preview</b>
+                </div>
+
+                <div class="preview-summary-row">
+                    <article class="preview-summary-box">
+                        <i class="bi bi-broadcast-pin"></i>
+                        <div>
+                            <small data-i18n="live">LIVE</small>
+                            <strong data-i18n="liveDesc">Data updating in real-time</strong>
+                        </div>
+                    </article>
+                    <article class="preview-summary-box">
+                        <i class="bi bi-people"></i>
+                        <div>
+                            <small data-i18n="patients">Patients</small>
+                            <strong>2 Active Beds</strong>
+                        </div>
+                    </article>
+                    <article class="preview-summary-box alert-box">
+                        <i class="bi bi-bell"></i>
+                        <div>
+                            <small data-i18n="alerts">Alerts</small>
+                            <strong>1 Notification</strong>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="preview-body-grid">
+                    <article class="preview-patient-card good">
+                        <div class="preview-patient-head">
+                            <span>
+                                <small data-i18n="patient">Patient</small>
+                                <strong data-i18n="patientA">Patient A</strong>
+                            </span>
+                            <b data-i18n="normal">Normal</b>
+                        </div>
+                        <div class="preview-patient-metric">
+                            <em data-i18n="ivLevel">IV Level</em>
+                            <strong>62%</strong>
+                        </div>
+                        <div class="preview-progress"><span style="width:62%"></span></div>
+                        <div class="preview-meta-row">
+                            <span>Bed 05</span>
+                            <span>Ward 3A</span>
+                            <span>72 ml/hr</span>
+                        </div>
+                    </article>
+
+                    <article class="preview-patient-card low">
+                        <div class="preview-patient-head">
+                            <span>
+                                <small data-i18n="patient">Patient</small>
+                                <strong data-i18n="patientB">Patient B</strong>
+                            </span>
+                            <b data-i18n="low">Low</b>
+                        </div>
+                        <div class="preview-patient-metric">
+                            <em data-i18n="ivLevel">IV Level</em>
+                            <strong>20%</strong>
+                        </div>
+                        <div class="preview-progress low-bar"><span style="width:20%"></span></div>
+                        <div class="preview-meta-row">
+                            <span>Bed 06</span>
+                            <span>Ward 3A</span>
+                            <span>36 ml/hr</span>
+                        </div>
+                    </article>
+
+                    <article class="preview-chart-card">
+                        <div class="preview-section-head">
+                            <strong data-i18n="weightTrend">Weight vs Time</strong>
+                            <span data-i18n="last60Minutes">Last 60 minutes</span>
+                        </div>
+                        <div class="chart-fake-area">
+                            <div class="chart-grid-lines"></div>
+                            <svg viewBox="0 0 420 160" preserveAspectRatio="none" aria-hidden="true">
+                                <path class="line-a" d="M0 28 C38 36, 56 38, 82 46 S128 56, 160 64 S208 78, 250 88 S300 102, 336 116 S378 128, 420 136"></path>
+                                <path class="line-b" d="M0 52 C28 58, 58 60, 88 70 S146 88, 176 100 S226 108, 268 120 S320 132, 420 148"></path>
+                            </svg>
+                        </div>
+                    </article>
+
+                    <article class="preview-notification-card">
+                        <div class="preview-section-head">
+                            <strong data-i18n="notifications">Notifications</strong>
+                            <span data-i18n="viewAll">View All</span>
+                        </div>
+                        <div class="preview-alert-item">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <div>
+                                <b>Patient B - Low</b>
+                                <small data-i18n="lowMessage">IV level is low. Please monitor.</small>
+                            </div>
+                        </div>
+                        <div class="preview-mini-info">
+                            <span><i class="bi bi-person"></i> Fariz Amirul</span>
+                            <span><i class="bi bi-clock"></i> 05:31 PM</span>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
     </main>
 
-    <section class="features-section">
-        <h2><i class="bi bi-stars"></i> <span data-i18n="systemFeatures">System Features</span></h2>
-        <div class="feature-grid">
-            <div class="feature-card"><i class="bi bi-activity"></i><strong data-i18n="realtimeMonitoring">Real-time Monitoring</strong><span data-i18n="realtimeMonitoringDesc">Live tracking of IV weight, level, and drip rate.</span></div>
-            <div class="feature-card"><i class="bi bi-bell-fill"></i><strong data-i18n="smartNotifications">Smart Notifications</strong><span data-i18n="smartNotificationsDesc">Instant warning for low or critical IV level.</span></div>
-            <div class="feature-card"><i class="bi bi-file-earmark-excel-fill"></i><strong data-i18n="excelExport">Excel Export</strong><span data-i18n="excelExportDesc">Export patient records and logs in one click.</span></div>
-            <div class="feature-card"><i class="bi bi-phone-fill"></i><strong data-i18n="responsiveAccess">Responsive Access</strong><span data-i18n="responsiveAccessDesc">Designed for laptop, tablet, and phone view.</span></div>
-            <div class="feature-card"><i class="bi bi-database-fill-check"></i><strong data-i18n="cloudIntegration">Cloud Integration</strong><span data-i18n="cloudIntegrationDesc">Ready for PostgreSQL database on Render.</span></div>
-        </div>
+    <section class="public-feature-grid premium-feature-grid template-feature-grid">
+        <article class="public-feature-card"><i class="bi bi-display"></i><div><strong data-i18n="featureRealtimeTitle">Real-time Monitoring</strong><span data-i18n="featureRealtimeDesc">Live tracking of IV flow, drip rate, and remaining volume.</span></div></article>
+        <article class="public-feature-card"><i class="bi bi-bell-fill"></i><div><strong data-i18n="featureNotificationTitle">Smart Notifications</strong><span data-i18n="featureNotificationDesc">Instant alerts for occlusion, low volume, or abnormalities.</span></div></article>
+        <article class="public-feature-card"><i class="bi bi-file-earmark-excel-fill"></i><div><strong data-i18n="featureExcelTitle">Excel Export</strong><span data-i18n="featureExcelDesc">Export patient data and logs to Excel with one click.</span></div></article>
+        <article class="public-feature-card"><i class="bi bi-phone-fill"></i><div><strong data-i18n="featureResponsiveTitle">Responsive Access</strong><span data-i18n="featureResponsiveDesc">Access monitors securely from desktop or mobile devices.</span></div></article>
+        <article class="public-feature-card"><i class="bi bi-cloud-fill"></i><div><strong data-i18n="featureCloudTitle">Cloud Integration</strong><span data-i18n="featureCloudDesc">Powered by PostgreSQL database on Render cloud.</span></div></article>
     </section>
-
-    <footer class="site-footer"><i class="bi bi-shield-plus"></i> <b data-i18n="finalYearProject">Final Year Project Dashboard</b> <span></span> Politeknik Seberang Perai <span></span> IV Monitoring System</footer>
 </div>
 {% endblock %}
