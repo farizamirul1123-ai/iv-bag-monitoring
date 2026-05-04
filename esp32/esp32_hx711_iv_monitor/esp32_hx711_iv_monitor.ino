@@ -63,9 +63,10 @@ unsigned long lastSerialTime = 0;
 
 float lastValidWeightGrams = 0.0;
 bool hasValidWeight = false;
+float latestWeightGrams = 0.0;  // nilai terakhir yang dipaparkan di Serial Monitor dan dihantar ke website
 
 const unsigned long DROP_DEBOUNCE_MS = 120;
-const unsigned long SEND_INTERVAL_MS = 10000;   // hantar ke server setiap 10 saat
+const unsigned long SEND_INTERVAL_MS = 2000;    // hantar ke server setiap 2 saat supaya website lebih real-time
 const unsigned long SERIAL_INTERVAL_MS = 2000;  // print serial setiap 2 saat
 
 // Jika sensor susah detect, cuba kecilkan 600 kepada 400.
@@ -248,6 +249,7 @@ void sendDataToServer(float weightGrams, float dropsPerMinute, String dripStatus
     http.begin(url);
   }
 
+  http.setTimeout(3500);  // elak Serial Monitor nampak stuck terlalu lama jika Render lambat respond
   http.addHeader("Content-Type", "application/json");
 
   // Current dashboard hanya simpan weight_g.
@@ -337,6 +339,7 @@ void loop() {
   // Print bacaan setiap 2 saat
   if (now - lastSerialTime >= SERIAL_INTERVAL_MS) {
     float currentWeight = readWeightGrams();
+    latestWeightGrams = currentWeight;
 
     int adcNow = analogRead(DROP_ADC_PIN);
     int diffNow = abs(adcNow - idleDropADC);
@@ -365,27 +368,31 @@ void loop() {
     lastSerialTime = now;
   }
 
-  // Hantar data setiap 10 saat
+  // Hantar data setiap 2 saat
   if (now - lastSendTime >= SEND_INTERVAL_MS) {
-    float currentWeight = readWeightGrams();
+    // Gunakan weight yang sama seperti Serial Monitor supaya website dan Serial Monitor matching.
+    float currentWeight = latestWeightGrams;
 
-    // Sebab interval 10 saat, darab 6 untuk anggaran drops/min
-    float dropsPerMinute = windowDrops * 6.0;
+    // Sebab interval 2 saat, darab 30 untuk anggaran drops/min.
+    float dropsPerMinute = windowDrops * 30.0;
     String dripStatus = getDripStatus(dropsPerMinute);
 
     Serial.println();
-    Serial.println("===== 10 Second Summary =====");
-    Serial.print("Drops in 10 seconds: ");
+    Serial.println("===== 2 Second Summary =====");
+    Serial.print("Weight sent to website: ");
+    Serial.print(currentWeight, 2);
+    Serial.println(" g");
+    Serial.print("Drops in 2 seconds: ");
     Serial.println(windowDrops);
     Serial.print("Estimated drops/min: ");
     Serial.println(dropsPerMinute);
     Serial.print("Drip Status: ");
     Serial.println(dripStatus);
-    Serial.println("=============================");
+    Serial.println("============================");
 
     sendDataToServer(currentWeight, dropsPerMinute, dripStatus);
 
-    // Reset kiraan window untuk 10 saat seterusnya
+    // Reset kiraan window untuk 2 saat seterusnya
     windowDrops = 0;
     lastSendTime = now;
   }

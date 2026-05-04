@@ -43,3 +43,10 @@ The backend files are unchanged from the working version.
 - ESP32 sketches avoid sending `-1` to the dashboard when HX711 is momentarily not ready; they reuse the last valid weight or send 0 only when no valid value exists yet.
 - Backend ignores invalid tiny ESP32 readings (`<= 5 g`) and keeps the last valid weight, so the dashboard does not get stuck at `1 ml` due to HX711 error/noise.
 - Existing design, routes, database structure, API key, and Render endpoint are kept as-is.
+
+
+## Realtime Match Fix
+- Website now saves 0.00 g from ESP32 as 0.00 g. It no longer keeps old 19 g / 25 g values when Serial Monitor shows 0 g.
+- ESP32 sends data every 2 seconds. Drops/min formula changed to `windowDrops * 30.0`.
+- ESP32 sends the same `latestWeightGrams` shown in Serial Monitor so dashboard and Serial Monitor match.
+- HTTP timeout added to reduce long blocking when Render is slow.

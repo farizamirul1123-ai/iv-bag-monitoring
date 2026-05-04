@@ -514,7 +514,7 @@ def get_drip_status(drops_per_min):
     return "Normal"
 
 
-def get_readings(patient_id, limit=50):
+def get_readings(patient_id, limit=30):
     return (
         Reading.query.filter_by(patient_id=patient_id)
         .order_by(Reading.created_at.desc())
@@ -524,7 +524,7 @@ def get_readings(patient_id, limit=50):
 
 
 def patient_payload(patient, readings=None):
-    readings = readings if readings is not None else get_readings(patient.id, limit=50)
+    readings = readings if readings is not None else get_readings(patient.id, limit=30)
     current_weight = max(float(patient.current_weight_g or 0), 0.0)
     full_weight = max(float(patient.full_weight_g or 0), 0.0)
     empty_weight = max(float(patient.empty_weight_g or 0), 0.0)
@@ -714,23 +714,24 @@ def latest_valid_weight(patient):
 def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system"):
     """Clean load-cell value before saving.
 
-    If the ESP32 briefly sends 0g while drip readings are still arriving, the
-    dashboard keeps the last valid weight instead of forcing IV Level to 0%.
-    Negative values are converted to positive because HX711 calibration factor
-    polarity is commonly reversed during prototype testing.
+    FINAL FIX: the dashboard must follow the ESP32 Serial Monitor exactly.
+    If ESP32 sends 0.00 g, the website saves 0.00 g. It will not keep the
+    previous valid value anymore, because that made the graph show old values
+    such as 19 g / 25 g while Serial Monitor already showed 0 g.
     """
     try:
         weight = float(weight_g)
     except (TypeError, ValueError):
         weight = 0.0
 
+    # Negative values are not a real IV weight. Clamp to zero so the website
+    # matches a zero/empty reading instead of displaying a previous value.
     if weight < 0:
-        weight = abs(weight)
+        weight = 0.0
 
-    if source == "esp32" and weight <= 5.0:
-        # Do not destroy the live dashboard with invalid HX711 values such as
-        # -1, 0, or tiny noise. Drops can still update normally.
-        weight = latest_valid_weight(patient)
+    # Remove tiny HX711 noise only. A real 0.00 g reading remains 0.00 g.
+    if abs(weight) < 1.0:
+        weight = 0.0
 
     return round(max(weight, 0.0), 2)
 

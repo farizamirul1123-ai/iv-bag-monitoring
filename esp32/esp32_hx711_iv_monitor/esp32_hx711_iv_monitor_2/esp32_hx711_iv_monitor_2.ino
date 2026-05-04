@@ -63,7 +63,7 @@ float lastValidWeightGrams = 0.0;
 bool hasValidWeight = false;
 
 const unsigned long DROP_DEBOUNCE_MS = 120;
-const unsigned long SEND_INTERVAL_MS = 10000;   // hantar ke server setiap 10 saat
+const unsigned long SEND_INTERVAL_MS = 2000;   // hantar ke server setiap 10 saat
 const unsigned long SERIAL_INTERVAL_MS = 2000;  // print serial setiap 2 saat
 
 // Jika sensor susah detect, cuba kecilkan 600 kepada 400.
@@ -368,7 +368,7 @@ void loop() {
     float currentWeight = readWeightGrams();
 
     // Sebab interval 10 saat, darab 6 untuk anggaran drops/min
-    float dropsPerMinute = windowDrops * 6.0;
+    float dropsPerMinute = windowDrops * 30.0;
     String dripStatus = getDripStatus(dropsPerMinute);
 
     Serial.println();
