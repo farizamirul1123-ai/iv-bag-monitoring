@@ -1,6 +1,10 @@
 (function () {
     const charts = {};
     const colors = { teal: 'rgba(6,152,169,1)', orange: 'rgba(255,123,24,1)', red: 'rgba(255,65,65,1)' };
+    const IV_CAPACITY_ML = 500;
+    const QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4;
+    const lastQuarterByPatient = {};
+    let audioCtx = null;
 
     function lang() { return document.body.dataset.initialLanguage || 'en'; }
     function dict() { return (window.TRANSLATIONS && (TRANSLATIONS[lang()] || TRANSLATIONS.en)) || {}; }
@@ -74,8 +78,85 @@
     }
 
     function fmtWeight(value, unit) {
-        const n = Math.max(0, Number(value || 0));
+        const n = Math.max(0, Math.min(unit === 'ml' ? IV_CAPACITY_ML : Number.MAX_SAFE_INTEGER, Number(value || 0)));
         return `${Math.round(n).toLocaleString()} ${unit || 'g'}`;
+    }
+
+    function clampVolume(value) { return Math.max(0, Math.min(IV_CAPACITY_ML, Number(value || 0))); }
+
+    function quarterFromVolume(value) {
+        const volume = clampVolume(value);
+        if (volume <= 0.5) return 0;
+        return Math.max(1, Math.min(4, Math.ceil(volume / QUARTER_VOLUME_ML)));
+    }
+
+    function quarterText(quarter) { return quarter > 0 ? `${quarter}/4` : '0/4'; }
+
+    function blinkText(quarter) {
+        if (quarter <= 0) return t('noBlinkSound', 'No blink/sound');
+        return `${quarter} ${t('blinkSound', 'blink/sound')}`;
+    }
+
+    function soundEnabled() {
+        try {
+            const saved = JSON.parse(localStorage.getItem('ivNotificationPreferences') || 'null');
+            if (Array.isArray(saved) && saved.length > 2) return Boolean(saved[2]);
+        } catch (e) { }
+        const toggles = document.querySelectorAll('[data-toggle-pref] .toggle');
+        return !toggles[2] || toggles[2].classList.contains('on');
+    }
+
+    function ensureAudio() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return null;
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+            return audioCtx;
+        } catch (e) { return null; }
+    }
+
+    function playQuarterBeeps(count) {
+        if (!soundEnabled() || count <= 0) return;
+        const ctx = ensureAudio();
+        if (!ctx) return;
+        for (let i = 0; i < count; i++) {
+            const start = ctx.currentTime + (i * 0.32);
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            gain.gain.setValueAtTime(0.001, start);
+            gain.gain.exponentialRampToValueAtTime(0.16, start + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(start);
+            osc.stop(start + 0.2);
+        }
+    }
+
+    function pulseQuarterIndicator(id) {
+        document.querySelectorAll(`[data-dashboard-patient-card="${id}"], [data-monitor-patient-panel="${id}"], [data-patient-quarter="${id}"]`).forEach(el => {
+            el.classList.remove('quarter-alert-pulse');
+            void el.offsetWidth;
+            el.classList.add('quarter-alert-pulse');
+        });
+    }
+
+    function handleQuarterNotification(id, quarter, name) {
+        if (!Number.isFinite(quarter)) return;
+        if (lastQuarterByPatient[id] === undefined) {
+            lastQuarterByPatient[id] = quarter;
+            return;
+        }
+        if (lastQuarterByPatient[id] === quarter) return;
+        lastQuarterByPatient[id] = quarter;
+        pulseQuarterIndicator(id);
+        if (quarter > 0) {
+            playQuarterBeeps(quarter);
+            toast(`${name}: ${quarterText(quarter)} - ${blinkText(quarter)}`);
+        }
     }
 
     function patientColor(id) { return Number(id) % 2 === 0 ? colors.orange : colors.teal; }
@@ -112,7 +193,7 @@
         };
     }
 
-    function drawFallbackLine(canvasId, labels, values, color, label, yMin) {
+    function drawFallbackLine(canvasId, labels, values, color, label, yMin, fixedMax) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
         const parent = canvas.parentElement;
@@ -130,7 +211,7 @@
 
         const nums = (values || []).map(v => Number(v || 0));
         const labs = labels && labels.length ? labels : nums.map((_, i) => String(i + 1));
-        const maxVal = niceMax(nums, yMin || 50);
+        const maxVal = fixedMax || niceMax(nums, yMin || 50);
         const padL = 42, padR = 12, padT = 12, padB = 28;
         const plotW = width - padL - padR;
         const plotH = height - padT - padB;
@@ -186,12 +267,12 @@
         });
     }
 
-    function createLine(canvasId, labels, values, color, label, yMin) {
+    function createLine(canvasId, labels, values, color, label, yMin, fixedMax) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        if (!window.Chart) { drawFallbackLine(canvasId, labels, values, color, label, yMin); return; }
+        if (!window.Chart) { drawFallbackLine(canvasId, labels, values, color, label, yMin, fixedMax); return; }
         const ctx = canvas.getContext('2d');
-        const yMax = niceMax(values, yMin || 50);
+        const yMax = fixedMax || niceMax(values, yMin || 50);
         if (!charts[canvasId]) {
             charts[canvasId] = new Chart(ctx, {
                 type: 'line',
@@ -205,7 +286,15 @@
             charts[canvasId].data.datasets[0].backgroundColor = makeGradient(ctx, color);
             charts[canvasId].data.datasets[0].label = label;
         }
+        charts[canvasId].options.scales.y.min = 0;
         charts[canvasId].options.scales.y.suggestedMax = yMax;
+        if (fixedMax) {
+            charts[canvasId].options.scales.y.max = fixedMax;
+            charts[canvasId].options.scales.y.ticks.stepSize = fixedMax === IV_CAPACITY_ML ? 100 : 1;
+        } else {
+            delete charts[canvasId].options.scales.y.max;
+            delete charts[canvasId].options.scales.y.ticks.stepSize;
+        }
         charts[canvasId].update();
     }
 
@@ -251,10 +340,53 @@
         charts.dropComparisonChart.update();
     }
 
+    function createQuarterAnalysis(data) {
+        const canvas = document.getElementById('quarterAnalysisChart');
+        if (!canvas) return;
+        const labels = (data.quarter_analysis && data.quarter_analysis.labels) || [];
+        const series = (data.quarter_analysis && data.quarter_analysis.series) || [];
+        if (!window.Chart) {
+            const first = series[0] || { quarters: [] };
+            drawFallbackLine('quarterAnalysisChart', labels, first.quarters || [], colors.teal, t('quarterNotification', 'Quarter Notification'), 4, 4);
+            return;
+        }
+        const datasets = series.map((s, i) => ({
+            label: displayPatientName(s.patient_name, s.patient_id) || `${t('patient', 'Patient')} ${i + 1}`,
+            data: (s.quarters || []).map(v => Math.max(0, Math.min(4, Number(v || 0)))),
+            borderColor: i % 2 ? colors.orange : colors.teal,
+            backgroundColor: 'transparent',
+            borderWidth: 3,
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+            tension: .28,
+            fill: false
+        }));
+        if (!charts.quarterAnalysisChart) {
+            charts.quarterAnalysisChart = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    ...chartOptions(),
+                    plugins: { legend: { display: true, position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8, color: '#082987', font: { weight: '700' } } }, tooltip: { backgroundColor: '#082987', padding: 10, cornerRadius: 10 } },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { color: '#405b9b', maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 11, weight: '600' } } },
+                        y: { min: 0, max: 4, ticks: { stepSize: 1, color: '#405b9b', callback: value => `${value}/4`, font: { size: 11, weight: '600' } }, grid: { color: 'rgba(8,41,135,.08)' } }
+                    }
+                }
+            });
+        } else {
+            charts.quarterAnalysisChart.data.labels = labels;
+            charts.quarterAnalysisChart.data.datasets = datasets;
+        }
+        charts.quarterAnalysisChart.update();
+    }
+
     function updatePatient(p) {
         const id = p.id;
         const status = normStatus(p.current_status);
         const pct = Math.round(Number(p.current_level_percent || 0));
+        const remainingMl = clampVolume(p.remaining_weight_g ?? p.current_weight_g);
+        const quarter = Number.isFinite(Number(p.volume_quarter)) ? Number(p.volume_quarter) : quarterFromVolume(remainingMl);
         const color = status === 'Critical' ? colors.red : status === 'Low' ? colors.orange : patientColor(id);
         const name = displayPatientName(p.patient_name, id);
 
@@ -264,9 +396,11 @@
         setText(`[data-patient-ward="${id}"]`, p.ward_number || 'Ward 3A');
         setText(`[data-patient-bed="${id}"]`, p.bed_number || '-');
         setText(`[data-patient-current-weight="${id}"]`, fmtWeight(p.current_weight_g, 'g'));
-        setText(`[data-patient-remaining-weight="${id}"]`, fmtWeight(p.remaining_weight_g, 'ml'));
+        setText(`[data-patient-remaining-weight="${id}"]`, fmtWeight(remainingMl, 'ml'));
         setText(`[data-patient-drop="${id}"]`, Math.round(Number(p.current_drop_rate || 0)));
         setText(`[data-patient-flow="${id}"]`, Math.round(Number(p.current_flow_rate_ml_hr || 0)));
+        setText(`[data-patient-quarter="${id}"]`, quarterText(quarter));
+        setText(`[data-patient-notification="${id}"]`, blinkText(quarter));
         setText(`[data-patient-updated="${id}"]`, p.last_update_time || p.last_update_full || '-');
 
         document.querySelectorAll(`[data-patient-level="${id}"]`).forEach(e => { e.textContent = `${pct}%`; e.style.color = color; });
@@ -279,19 +413,20 @@
 
         const readings = p.readings || [];
         const labels = readings.length ? readings.map(r => r.label) : [p.last_update_time || clock(new Date())];
-        const weights = readings.length ? readings.map(r => Number(r.weight_g || 0)) : [Number(p.current_weight_g || 0)];
+        const weights = readings.length ? readings.map(r => clampVolume(r.remaining_ml ?? r.weight_g)) : [remainingMl];
         const drops = readings.length ? readings.map(r => Number(r.drops_per_min || 0)) : [Number(p.current_drop_rate || 0)];
-        createLine(`dashWeightChart${id}`, labels, weights, patientColor(id), t('weightG', 'Weight (g)'), 100);
-        createLine(`monitorWeightChart${id}`, labels, weights, patientColor(id), t('weightG', 'Weight (g)'), 100);
+        createLine(`dashWeightChart${id}`, labels, weights, patientColor(id), t('weightMl', 'Volume (ml)'), 100, IV_CAPACITY_ML);
+        createLine(`monitorWeightChart${id}`, labels, weights, patientColor(id), t('weightMl', 'Volume (ml)'), 100, IV_CAPACITY_ML);
         createLine(`monitorDropChart${id}`, labels, drops, patientColor(id), t('dropsPerMin', 'Drops/min'), 40);
         renderLiveLog(id, readings);
+        handleQuarterNotification(id, quarter, name);
     }
 
     function renderLiveLog(id, readings) {
         const body = document.getElementById(`liveLog${id}`);
         if (!body) return;
         const rows = (readings || []).slice(-5).reverse();
-        body.innerHTML = rows.map(r => `<tr><td>${r.label || '-'}</td><td>${Math.round(Number(r.weight_g || 0))}</td><td>${Math.round(Number(r.drops_per_min || 0))}</td><td>${Math.round(Number(r.flow_rate_ml_hr || 0))}</td><td>${Math.round(Number(r.level_percent || 0))}</td></tr>`).join('') || `<tr><td colspan="5">${t('noAlerts', 'No data')}</td></tr>`;
+        body.innerHTML = rows.map(r => `<tr><td>${r.label || '-'}</td><td>${Math.round(clampVolume(r.remaining_ml ?? r.weight_g))}</td><td>${Math.round(Number(r.drops_per_min || 0))}</td><td>${Math.round(Number(r.flow_rate_ml_hr || 0))}</td><td>${Math.round(Number(r.level_percent || 0))}</td><td>${r.quarter_label || quarterText(quarterFromVolume(r.remaining_ml ?? r.weight_g))}</td></tr>`).join('') || `<tr><td colspan="6">${t('noAlerts', 'No data')}</td></tr>`;
     }
 
     function alertTitle(a) {
@@ -376,6 +511,7 @@
             try { updatePatient(p); } catch (err) { console.error('Patient update failed', p && p.id, err); }
         });
         try { createDropComparison(data); } catch (err) { console.error('Drop comparison failed', err); }
+        try { createQuarterAnalysis(data); } catch (err) { console.error('Quarter analysis failed', err); }
         try { renderNotifications(data); } catch (err) { console.error('Notifications failed', err); }
         try { updateSystem(data); } catch (err) { console.error('System update failed', err); }
     }
@@ -530,6 +666,7 @@
         loadPreferences();
         loadUsers();
         setupButtons();
+        document.addEventListener('pointerdown', ensureAudio, { once: true });
         if (window.INITIAL_DASHBOARD_DATA) {
             updateDashboard(window.INITIAL_DASHBOARD_DATA);
             setInterval(() => refresh(false), 2000);

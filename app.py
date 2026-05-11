@@ -33,6 +33,8 @@ MONITOR_OPTIONS = ["Fariz Amirul", "Hareny", "Madam Ku Lee Chin"]
 DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
 TIMEZONE_OFFSET_HOURS = int(os.getenv("TIMEZONE_OFFSET_HOURS", "8"))  # Render runs in UTC; Malaysia time = UTC+8.
 DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
+IV_CAPACITY_ML = float(os.getenv("IV_CAPACITY_ML", "500"))  # 500 ml IV bag, 1 ml ~= 1 g for this project.
+QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4.0
 
 
 class MonitorLog(db.Model):
@@ -46,9 +48,9 @@ class PatientSlot(db.Model):
     patient_name = db.Column(db.String(120), nullable=False)
     bed_number = db.Column(db.String(50), nullable=False)
     ward_number = db.Column(db.String(50), nullable=True, default="Ward 3A")
-    full_weight_g = db.Column(db.Float, nullable=False, default=550.0)
-    empty_weight_g = db.Column(db.Float, nullable=False, default=50.0)
-    current_weight_g = db.Column(db.Float, nullable=False, default=550.0)
+    full_weight_g = db.Column(db.Float, nullable=False, default=500.0)
+    empty_weight_g = db.Column(db.Float, nullable=False, default=0.0)
+    current_weight_g = db.Column(db.Float, nullable=False, default=500.0)
     current_level_percent = db.Column(db.Float, nullable=False, default=100.0)
     current_drop_rate = db.Column(db.Float, nullable=True, default=0.0)
     current_flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
@@ -103,6 +105,37 @@ def format_dt(value, fmt="%d/%m/%Y %H:%M:%S"):
 
 def format_time(value):
     return format_dt(value, "%I:%M:%S %p")
+
+
+def clamp_volume_ml(value):
+    """Clamp IV weight/volume to the project range: 0 - 500 ml/g."""
+    try:
+        volume = float(value or 0)
+    except (TypeError, ValueError):
+        volume = 0.0
+    return round(max(0.0, min(IV_CAPACITY_ML, volume)), 2)
+
+
+def volume_quarter(value):
+    """Return 0-4 quarter level for the lecturer-requested blink/sound indicator."""
+    volume = clamp_volume_ml(value)
+    if volume <= 0.5:
+        return 0
+    quarter = int((volume + QUARTER_VOLUME_ML - 0.000001) // QUARTER_VOLUME_ML)
+    return max(1, min(4, quarter))
+
+
+def quarter_label(value):
+    q = volume_quarter(value)
+    return "0/4" if q == 0 else f"{q}/4"
+
+
+def quarter_notification_text(value):
+    q = volume_quarter(value)
+    if q <= 0:
+        return "No blink/sound"
+    suffix = "blink/sound" if q == 1 else "blinks/sounds"
+    return f"{q} {suffix}"
 
 
 def calculate_level(current_weight, empty_weight, full_weight):
@@ -191,9 +224,9 @@ def seed_database():
                 patient_name=item["patient_name"],
                 bed_number=item["bed_number"],
                 ward_number=item["ward_number"],
-                full_weight_g=550.0,
-                empty_weight_g=50.0,
-                current_weight_g=550.0,
+                full_weight_g=IV_CAPACITY_ML,
+                empty_weight_g=0.0,
+                current_weight_g=IV_CAPACITY_ML,
                 current_level_percent=100.0,
                 current_drop_rate=0.0,
                 current_flow_rate_ml_hr=0.0,
@@ -214,6 +247,15 @@ def seed_database():
             patient.ward_number = defaults[idx]["ward_number"]
         if not patient.bed_number:
             patient.bed_number = defaults[idx]["bed_number"]
+
+        # Project calibration is fixed at 500 ml = 500 g so the dashboard graph
+        # and level indicators stay within 0 - 500 ml only.
+        patient.full_weight_g = IV_CAPACITY_ML
+        patient.empty_weight_g = 0.0
+        patient.current_weight_g = clamp_volume_ml(patient.current_weight_g)
+        patient.current_level_percent = calculate_level(patient.current_weight_g, patient.empty_weight_g, patient.full_weight_g)
+        patient.current_status = get_status(patient.current_level_percent)
+
         if patient.current_drop_rate is None:
             patient.current_drop_rate = 0.0
         if patient.current_flow_rate_ml_hr is None:
@@ -226,7 +268,7 @@ def seed_database():
             # Once ESP32 data arrives, these are simply older readings.
             base_now = utcnow() - timedelta(minutes=70)
             if idx == 0:
-                weights = [520, 500, 485, 470, 455, 435, 420, 400, 385, 365, 350, 340]
+                weights = [500, 485, 470, 455, 435, 420, 400, 385, 365, 350, 340, 320]
                 drops = [28, 26, 31, 27, 29, 26, 25, 28, 24, 23, 24, 24]
             else:
                 weights = [500, 475, 455, 435, 360, 340, 320, 290, 260, 220, 170, 110]
@@ -251,8 +293,8 @@ def seed_database():
                         created_at=base_now + timedelta(minutes=n * 6),
                     )
                 )
-            patient.current_weight_g = weights[-1]
-            patient.current_level_percent = calculate_level(weights[-1], patient.empty_weight_g, patient.full_weight_g)
+            patient.current_weight_g = clamp_volume_ml(weights[-1])
+            patient.current_level_percent = calculate_level(patient.current_weight_g, patient.empty_weight_g, patient.full_weight_g)
             patient.current_status = get_status(patient.current_level_percent)
             patient.current_drop_rate = drops[-1]
             patient.current_flow_rate_ml_hr = calculate_flow_rate(drops[-1])
@@ -376,8 +418,11 @@ def update_patient(patient_id):
     patient.patient_name = request.form.get("patient_name", patient.patient_name).strip() or patient.patient_name
     patient.bed_number = request.form.get("bed_number", patient.bed_number).strip() or patient.bed_number
     patient.ward_number = request.form.get("ward_number", patient.ward_number or "Ward 3A").strip() or patient.ward_number
-    patient.full_weight_g = float(request.form.get("full_weight_g", patient.full_weight_g))
-    patient.empty_weight_g = float(request.form.get("empty_weight_g", patient.empty_weight_g))
+    # Keep calibration fixed for this project: 500 ml = 500 g, empty = 0 g.
+    # The form remains visible, but values are controlled so graphs stay 0 - 500 ml.
+    patient.full_weight_g = IV_CAPACITY_ML
+    patient.empty_weight_g = 0.0
+    patient.current_weight_g = clamp_volume_ml(patient.current_weight_g)
 
     patient.current_level_percent = calculate_level(
         patient.current_weight_g, patient.empty_weight_g, patient.full_weight_g
@@ -468,6 +513,11 @@ def api_update():
             "weight_g": patient.current_weight_g,
             "raw_weight_received_g": weight_g,
             "level_percent": patient.current_level_percent,
+            "remaining_ml": clamp_volume_ml(patient.current_weight_g),
+            "capacity_ml": IV_CAPACITY_ML,
+            "volume_quarter": volume_quarter(patient.current_weight_g),
+            "quarter_label": quarter_label(patient.current_weight_g),
+            "notification_blinks": volume_quarter(patient.current_weight_g),
             "status": patient.current_status,
             "drops_per_min": patient.current_drop_rate,
             "flow_rate_ml_hr": patient.current_flow_rate_ml_hr,
@@ -516,12 +566,13 @@ def get_readings(patient_id, limit=50):
 
 def patient_payload(patient, readings=None):
     readings = readings if readings is not None else get_readings(patient.id, limit=50)
-    current_weight = max(float(patient.current_weight_g or 0), 0.0)
-    full_weight = max(float(patient.full_weight_g or 0), 0.0)
-    empty_weight = max(float(patient.empty_weight_g or 0), 0.0)
+    current_weight = clamp_volume_ml(patient.current_weight_g)
+    full_weight = IV_CAPACITY_ML
+    empty_weight = 0.0
     # Remaining fluid follows the current measured weight shown by ESP32.
-    # Empty bag weight is displayed separately as a calibration/reference value.
-    remaining_weight = current_weight
+    # For this project, 500 ml = 500 g and the dashboard is limited to 0 - 500 ml.
+    remaining_weight = clamp_volume_ml(current_weight)
+    current_quarter = volume_quarter(remaining_weight)
     return {
         "id": patient.id,
         "patient_code": f"PT{patient.id:03d}",
@@ -530,6 +581,11 @@ def patient_payload(patient, readings=None):
         "ward_number": patient.ward_number or "Ward 3A",
         "current_weight_g": round(current_weight, 2),
         "remaining_weight_g": round(remaining_weight, 2),
+        "capacity_ml": round(IV_CAPACITY_ML, 2),
+        "volume_quarter": current_quarter,
+        "quarter_label": quarter_label(remaining_weight),
+        "notification_blinks": current_quarter,
+        "notification_text": quarter_notification_text(remaining_weight),
         "current_level_percent": round(max(patient.current_level_percent or 0, 0), 2),
         "current_status": patient.current_status or "Normal",
         "current_drop_rate": round(patient.current_drop_rate or 0, 2),
@@ -543,7 +599,11 @@ def patient_payload(patient, readings=None):
             {
                 "label": format_dt(r.created_at, "%I:%M %p"),
                 "time": format_dt(r.created_at, "%d/%m/%Y, %I:%M:%S %p"),
-                "weight_g": round(max(r.weight_g or 0, 0), 2),
+                "weight_g": clamp_volume_ml(r.weight_g),
+                "remaining_ml": clamp_volume_ml(r.weight_g),
+                "volume_quarter": volume_quarter(r.weight_g),
+                "quarter_label": quarter_label(r.weight_g),
+                "notification_blinks": volume_quarter(r.weight_g),
                 "level_percent": round(max(r.level_percent or 0, 0), 2),
                 "status": r.status or "Normal",
                 "drops_per_min": round(max(r.drops_per_min or 0, 0), 2),
@@ -596,6 +656,18 @@ def build_dashboard_payload():
                 for item in patient_items
             ],
         },
+        "quarter_analysis": {
+            "labels": chart_labels,
+            "series": [
+                {
+                    "patient_id": item["id"],
+                    "patient_name": item["patient_name"],
+                    "quarters": [r["volume_quarter"] for r in item["readings"]],
+                    "volumes": [r["remaining_ml"] for r in item["readings"]],
+                }
+                for item in patient_items
+            ],
+        },
         "system": {
             "data_source": "PostgreSQL / Render Cloud" if "postgresql" in DATABASE_URL else "SQLite Local Test",
             "connected": True,
@@ -616,15 +688,18 @@ def export_excel():
             "Patient Name": p.patient_name,
             "Ward": p.ward_number,
             "Bed Number": p.bed_number,
-            "Current IV Weight (g)": p.current_weight_g,
+            "Current IV Weight (g)": clamp_volume_ml(p.current_weight_g),
+            "Remaining Volume (ml)": clamp_volume_ml(p.current_weight_g),
+            "Volume Quarter": quarter_label(p.current_weight_g),
+            "Notification Blink/Sound Quantity": volume_quarter(p.current_weight_g),
             "IV Level (%)": p.current_level_percent,
             "IV Status": p.current_status,
             "Drop Rate (drops/min)": p.current_drop_rate,
             "Flow Rate (ml/hr)": p.current_flow_rate_ml_hr,
             "Drip Status": p.current_drip_status,
             "Last Update Time": format_dt(p.last_update_time),
-            "Full Weight (g)": p.full_weight_g,
-            "Empty Weight (g)": p.empty_weight_g,
+            "Full Weight (g)": IV_CAPACITY_ML,
+            "Empty Weight (g)": 0.0,
         }
         for p in patients
     ]
@@ -633,7 +708,10 @@ def export_excel():
         {
             "Reading ID": r.id,
             "Patient ID": r.patient_id,
-            "Weight (g)": r.weight_g,
+            "Weight (g)": clamp_volume_ml(r.weight_g),
+            "Remaining Volume (ml)": clamp_volume_ml(r.weight_g),
+            "Volume Quarter": quarter_label(r.weight_g),
+            "Notification Blink/Sound Quantity": volume_quarter(r.weight_g),
             "Level (%)": r.level_percent,
             "IV Status": r.status,
             "Drop Count": r.drop_count,
@@ -696,8 +774,7 @@ def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system")
     except (TypeError, ValueError):
         weight = 0.0
 
-    if weight < 0:
-        weight = 0.0
+    weight = clamp_volume_ml(weight)
 
     return round(weight, 2)
 
@@ -705,6 +782,8 @@ def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system")
 def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status=None, source="system"):
     now = utcnow()
     drops_per_min = round(float(drops_per_min or 0), 2)
+    patient.full_weight_g = IV_CAPACITY_ML
+    patient.empty_weight_g = 0.0
     weight_g = clean_incoming_weight(patient, weight_g, drops_per_min=drops_per_min, source=source)
     level = calculate_level(weight_g, patient.empty_weight_g, patient.full_weight_g)
     status = get_status(level)

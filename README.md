@@ -34,4 +34,20 @@ templates/select_monitor.html
 static/css/styles.css
 ```
 
-The backend files are unchanged from the working version.
+Backend and ESP32 files are now updated for 500 ml calibration and quarter notification analysis.
+
+## 500 ml Calibration + Quarter Notification Update
+
+This version is updated for the 500 ml = 500 g IV bag test.
+
+- `esp32_hx711_iv_monitor.ino` calibration factor: `-521.70` for the 5 kg load cell test reading of 37.0 g with 500 g load.
+- `esp32_hx711_iv_monitor_2.ino` calibration factor: `-585.15` for the 1 kg load cell test reading of about 41–42 g with 500 g load.
+- Dashboard weight/volume graphs are fixed to the range `0–500 ml`.
+- Readings above 500 are clamped to 500 so the graph cannot exceed the IV bag capacity.
+- Quarter notification logic is added:
+  - `1/4` = 1 blink/sound
+  - `2/4` = 2 blinks/sounds
+  - `3/4` = 3 blinks/sounds
+  - `4/4` = 4 blinks/sounds
+- Optional ESP32 buzzer output is set to GPIO18 and LED blink output is set to GPIO2.
+- A new report graph, `Quantity Notification Analysis`, shows the quarter notification level over time.
