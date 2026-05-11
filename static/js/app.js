@@ -4,7 +4,15 @@
     const IV_CAPACITY_ML = 500;
     const QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4;
     const lastQuarterByPatient = {};
+    const activeEmptyAlarmPatients = new Set();
     let audioCtx = null;
+    let emptyAlarmTimer = null;
+    let audioUnlocked = false;
+
+    // Browser-only sound system:
+    // - 0/4 or critical empty level = repeating phone-style alarm
+    // - 1/4, 2/4, 3/4, 4/4 = short phone notification tones
+    const EMPTY_ALARM_THRESHOLD_ML = 50;
 
     function lang() { return document.body.dataset.initialLanguage || 'en'; }
     function dict() { return (window.TRANSLATIONS && (TRANSLATIONS[lang()] || TRANSLATIONS.en)) || {}; }
@@ -93,8 +101,8 @@
     function quarterText(quarter) { return quarter > 0 ? `${quarter}/4` : '0/4'; }
 
     function blinkText(quarter) {
-        if (quarter <= 0) return t('noBlinkSound', 'No blink/sound');
-        return `${quarter} ${t('blinkSound', 'blink/sound')}`;
+        if (quarter <= 0) return t('emptyAlarmSound', 'Empty alarm');
+        return `${quarter} ${t('notificationSound', 'phone notification')}`;
     }
 
     function soundEnabled() {
@@ -116,24 +124,94 @@
         } catch (e) { return null; }
     }
 
-    function playQuarterBeeps(count) {
+    function playTone(start, freqStart, freqEnd, duration, volume) {
+        const ctx = ensureAudio();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freqStart, start);
+        if (freqEnd && freqEnd !== freqStart) {
+            osc.frequency.exponentialRampToValueAtTime(freqEnd, start + Math.max(0.03, duration * 0.72));
+        }
+        gain.gain.setValueAtTime(0.001, start);
+        gain.gain.exponentialRampToValueAtTime(volume || 0.16, start + 0.025);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration + 0.03);
+    }
+
+    function playPhoneNotification(count) {
         if (!soundEnabled() || count <= 0) return;
         const ctx = ensureAudio();
         if (!ctx) return;
-        for (let i = 0; i < count; i++) {
-            const start = ctx.currentTime + (i * 0.32);
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = 880;
-            gain.gain.setValueAtTime(0.001, start);
-            gain.gain.exponentialRampToValueAtTime(0.16, start + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start(start);
-            osc.stop(start + 0.2);
+        const repeats = Math.max(1, Math.min(4, Number(count || 1)));
+        for (let i = 0; i < repeats; i++) {
+            const base = ctx.currentTime + (i * 0.46);
+            // A short two-note notification, closer to a phone notification than a buzzer beep.
+            playTone(base, 1046.5, 1396.9, 0.16, 0.13);
+            playTone(base + 0.18, 1568.0, 1975.5, 0.18, 0.10);
         }
+    }
+
+    function playEmptyAlarmPulse() {
+        if (!soundEnabled() || !activeEmptyAlarmPatients.size) return;
+        const ctx = ensureAudio();
+        if (!ctx) return;
+        const base = ctx.currentTime;
+        // Repeating phone-alarm style: rising and falling urgent tones.
+        playTone(base, 760, 1280, 0.34, 0.20);
+        playTone(base + 0.38, 1280, 760, 0.34, 0.20);
+        playTone(base + 0.86, 760, 1280, 0.34, 0.20);
+        playTone(base + 1.24, 1280, 760, 0.34, 0.20);
+    }
+
+    function startEmptyAlarm(id, name) {
+        const before = activeEmptyAlarmPatients.size;
+        activeEmptyAlarmPatients.add(String(id));
+        if (before === activeEmptyAlarmPatients.size) return;
+        pulseQuarterIndicator(id);
+        toast(`${name}: ${t('emptyAlarmToast', 'IV bag empty / critical - alarm active')}`);
+        playEmptyAlarmPulse();
+        if (!emptyAlarmTimer) {
+            emptyAlarmTimer = setInterval(playEmptyAlarmPulse, 2200);
+        }
+    }
+
+    function stopEmptyAlarm(id) {
+        activeEmptyAlarmPatients.delete(String(id));
+        if (!activeEmptyAlarmPatients.size && emptyAlarmTimer) {
+            clearInterval(emptyAlarmTimer);
+            emptyAlarmTimer = null;
+        }
+    }
+
+
+    function playCurrentStatusSoundsAfterUnlock() {
+        const data = window.__LAST_DASHBOARD_DATA__;
+        if (!data || !Array.isArray(data.patients)) return;
+        data.patients.forEach(p => {
+            const id = p.id;
+            const name = displayPatientName(p.patient_name, id);
+            const remainingMl = clampVolume(p.remaining_weight_g ?? p.current_weight_g);
+            const quarter = Number.isFinite(Number(p.volume_quarter)) ? Number(p.volume_quarter) : quarterFromVolume(remainingMl);
+            const status = normStatus(p.current_status);
+            const emptyOrCritical = quarter <= 0 || remainingMl <= EMPTY_ALARM_THRESHOLD_ML || status === 'Critical';
+            if (emptyOrCritical) {
+                startEmptyAlarm(id, name);
+            } else if (quarter > 0) {
+                playPhoneNotification(quarter);
+            }
+        });
+    }
+
+    function unlockAudioAndPreview() {
+        if (audioUnlocked) return;
+        audioUnlocked = true;
+        ensureAudio();
+        setTimeout(playCurrentStatusSoundsAfterUnlock, 80);
     }
 
     function pulseQuarterIndicator(id) {
@@ -144,8 +222,16 @@
         });
     }
 
-    function handleQuarterNotification(id, quarter, name) {
+    function handleQuarterNotification(id, quarter, name, remainingMl, status) {
         if (!Number.isFinite(quarter)) return;
+
+        const emptyOrCritical = quarter <= 0 || clampVolume(remainingMl) <= EMPTY_ALARM_THRESHOLD_ML || normStatus(status) === 'Critical';
+        if (emptyOrCritical) {
+            startEmptyAlarm(id, name);
+        } else {
+            stopEmptyAlarm(id);
+        }
+
         if (lastQuarterByPatient[id] === undefined) {
             lastQuarterByPatient[id] = quarter;
             return;
@@ -153,8 +239,9 @@
         if (lastQuarterByPatient[id] === quarter) return;
         lastQuarterByPatient[id] = quarter;
         pulseQuarterIndicator(id);
+
         if (quarter > 0) {
-            playQuarterBeeps(quarter);
+            playPhoneNotification(quarter);
             toast(`${name}: ${quarterText(quarter)} - ${blinkText(quarter)}`);
         }
     }
@@ -419,7 +506,7 @@
         createLine(`monitorWeightChart${id}`, labels, weights, patientColor(id), t('weightMl', 'Volume (ml)'), 100, IV_CAPACITY_ML);
         createLine(`monitorDropChart${id}`, labels, drops, patientColor(id), t('dropsPerMin', 'Drops/min'), 40);
         renderLiveLog(id, readings);
-        handleQuarterNotification(id, quarter, name);
+        handleQuarterNotification(id, quarter, name, remainingMl, status);
     }
 
     function renderLiveLog(id, readings) {
@@ -506,6 +593,7 @@
 
     function updateDashboard(data) {
         if (!data || !Array.isArray(data.patients)) return;
+        window.__LAST_DASHBOARD_DATA__ = data;
         translateStatic();
         data.patients.forEach(p => {
             try { updatePatient(p); } catch (err) { console.error('Patient update failed', p && p.id, err); }
@@ -666,7 +754,7 @@
         loadPreferences();
         loadUsers();
         setupButtons();
-        document.addEventListener('pointerdown', ensureAudio, { once: true });
+        ['pointerdown', 'click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, unlockAudioAndPreview, { once: true }));
         if (window.INITIAL_DASHBOARD_DATA) {
             updateDashboard(window.INITIAL_DASHBOARD_DATA);
             setInterval(() => refresh(false), 2000);

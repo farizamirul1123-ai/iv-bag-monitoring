@@ -27,7 +27,8 @@ HX711 scale;
 // Calibration factor updated using 500 ml = 500 g test.
 // Formula: NEW_FACTOR = OLD_FACTOR x (READING_WITH_500G / 500).
 // 1kg load cell: 500 g standard read 41.5 g average => -585.15
-float CALIBRATION_FACTOR = -585.15;
+// 1kg load cell adjusted: actual 500 ml read as 450 g before correction
+float CALIBRATION_FACTOR = -526.64;
 
 // Kalau bacaan jadi negatif, cuba tukar false kepada true.
 bool REVERSE_WEIGHT_SIGN = false;
