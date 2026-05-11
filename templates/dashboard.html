@@ -38,7 +38,7 @@
                             <div class="mini-top-card live-card"><i class="dot"></i><div><strong data-i18n="live">LIVE</strong><small data-i18n="liveDesc">Data updating in real-time</small><small><span data-i18n="monitoredBy">Monitored by</span>: <b>{{ monitor_name }}</b></small></div></div>
                             <div class="mini-top-card time-card"><i class="bi bi-clock"></i><div><strong id="localClock">--:--:--</strong><small id="localDate">--</small></div></div>
                             <button class="mini-top-card refresh-card" type="button" data-action="refresh-dashboard"><i class="bi bi-arrow-clockwise"></i><div><strong data-i18n="refresh">Refresh</strong><small data-i18n="autoRefresh">Auto Refresh</small></div></button>
-                            <a class="mini-top-card excel-card" href="{{ url_for('export_excel') }}"><i class="bi bi-file-earmark-excel"></i><div><strong data-i18n="exportExcel">Export Excel</strong><small>.xlsx</small></div></a>
+                            <a class="mini-top-card excel-card" href="{{ url_for('export_excel') }}" data-action="download-excel" download><i class="bi bi-file-earmark-excel"></i><div><strong data-i18n="exportExcel">Export Excel</strong><small>.xlsx</small></div></a>
                         </div>
 
                         <div class="patient-card-grid">
@@ -71,6 +71,13 @@
                                     </div>
                                 </div>
                                 <div class="last-update-row"><span data-i18n="lastUpdate">Last Update</span><strong data-patient-updated="{{ patient.id }}">{{ patient.last_update_time.strftime('%I:%M:%S %p') if patient.last_update_time else '-' }}</strong><em><i class="dot small"></i> <span data-i18n="live">Live</span></em></div>
+                                <div class="alarm-control-row">
+                                    <button class="stop-alarm-button" type="button" data-action="stop-empty-alarm" data-patient-id="{{ patient.id }}">
+                                        <i class="bi bi-volume-mute"></i>
+                                        <span data-i18n="stopAlarmBagRemoved">Stop Alarm / Bag Removed</span>
+                                    </button>
+                                    <small data-bag-session-note="{{ patient.id }}"></small>
+                                </div>
                             </article>
                             {% endfor %}
                         </div>
@@ -132,6 +139,13 @@
                         <div class="metric-box quarter-notification-box"><i class="bi bi-bell-fill"></i><span data-i18n="quarterNotification">Quarter Notification</span><strong><span data-patient-quarter="{{ patient.id }}">--/4</span> <small data-patient-notification="{{ patient.id }}">--</small></strong></div>
                         <div class="metric-box"><i class="bi bi-activity"></i><span data-i18n="status">Status</span><strong class="status-pill status-normal" data-patient-status="{{ patient.id }}">Normal</strong></div>
                     </div>
+                    <div class="alarm-control-row monitor-alarm-row">
+                        <button class="stop-alarm-button" type="button" data-action="stop-empty-alarm" data-patient-id="{{ patient.id }}">
+                            <i class="bi bi-volume-mute"></i>
+                            <span data-i18n="stopAlarmBagRemoved">Stop Alarm / Bag Removed</span>
+                        </button>
+                        <small data-bag-session-note="{{ patient.id }}"></small>
+                    </div>
                     <div class="monitor-detail-grid">
                         <div class="chart-card compact-chart"><div class="chart-title"><strong data-i18n="weightTrend">Weight vs Time</strong><em data-i18n="weightMl">Volume (ml)</em></div><canvas id="monitorWeightChart{{ patient.id }}"></canvas></div>
                         <div class="chart-card compact-chart"><div class="chart-title"><strong data-i18n="dropTrend">Drop Rate Trend</strong><em data-i18n="dropsPerMin">Drops/min</em></div><canvas id="monitorDropChart{{ patient.id }}"></canvas></div>
@@ -178,7 +192,7 @@
 
             <section class="app-section" data-section="reports">
                 <div class="page-heading"><h1 data-i18n="reportsPageTitle">Reports</h1><p data-i18n="reportsPageDesc">Export current status, historical readings and alert logs to Excel.</p></div>
-                <div class="report-grid"><a class="report-card main" href="{{ url_for('export_excel') }}"><i class="bi bi-file-earmark-excel-fill"></i><strong data-i18n="downloadExcelReport">Download Excel Report</strong><span data-i18n="reportIncludes">Current status, historical readings and alert logs.</span></a><button type="button" class="report-card" data-section-target="patients"><i class="bi bi-people"></i><strong data-i18n="patientRecords">Patient Records</strong><span>2</span></button><button type="button" class="report-card" data-section-target="monitors"><i class="bi bi-activity"></i><strong data-i18n="historicalReadings">Historical Readings</strong><span data-i18n="live">Live</span></button><button type="button" class="report-card" data-section-target="alerts"><i class="bi bi-bell"></i><strong data-i18n="alertLogs">Alert Logs</strong><span id="reportAlertCount">0</span></button></div>
+                <div class="report-grid"><a class="report-card main" href="{{ url_for('export_excel') }}" data-action="download-excel" download><i class="bi bi-file-earmark-excel-fill"></i><strong data-i18n="downloadExcelReport">Download Excel Report</strong><span data-i18n="reportIncludes">Current status, historical readings and alert logs.</span></a><button type="button" class="report-card" data-section-target="patients"><i class="bi bi-people"></i><strong data-i18n="patientRecords">Patient Records</strong><span>2</span></button><button type="button" class="report-card" data-section-target="monitors"><i class="bi bi-activity"></i><strong data-i18n="historicalReadings">Historical Readings</strong><span data-i18n="live">Live</span></button><button type="button" class="report-card" data-section-target="alerts"><i class="bi bi-bell"></i><strong data-i18n="alertLogs">Alert Logs</strong><span id="reportAlertCount">0</span></button></div>
                 <article class="chart-card wide-chart report-analysis-chart"><div class="chart-title"><strong data-i18n="notificationAnalysis">Quantity Notification Analysis</strong><em data-i18n="notificationAnalysisDesc">Quarter blink/sound level</em></div><canvas id="quarterAnalysisChart"></canvas></article>
             </section>
 

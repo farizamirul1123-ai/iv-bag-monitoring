@@ -67,7 +67,7 @@
                 openDashboard: "Open Dashboard",
                 photoPending: "Photo Pending",
                 selectInfo: "Selecting a monitor will open their real-time dashboard.",
-                supervisorTitle: "Project Supervisor", supervisorDesc: "Smart IV Monitoring System supervision and project guidance.", selectAlertPrompt: "Click a notification on the left to view details.", userName: "User Name", saveUser: "Save User", userAdded: "User added to this screen.", preferencesSavedBrowser: "Notification preferences saved on this browser."
+                supervisorTitle: "Project Supervisor", supervisorDesc: "Smart IV Monitoring System supervision and project guidance.", selectAlertPrompt: "Click a notification on the left to view details.", userName: "User Name", saveUser: "Save User", userAdded: "User added to this screen.", preferencesSavedBrowser: "Notification preferences saved on this browser.", stopAlarmBagRemoved: "Stop Alarm / Bag Removed", alarmStopped: "Alarm stopped. Bag removed mode is active.", waitingNewBag: "Waiting for new IV bag", newBagDetected: "New IV bag detected. Monitoring restarted.", preparingExcel: "Preparing Excel report...", excelDownloaded: "Excel report downloaded.", excelFailed: "Excel download failed. Try Refresh, then click Export Excel again."
             },
             ms: {
                 dashboard: "Papan Pemuka", monitors: "Monitor", patients: "Pesakit", alerts: "Amaran", reports: "Laporan", settings: "Tetapan", logout: "Log Keluar", collapse: "Kecilkan",
@@ -120,12 +120,12 @@
                 openDashboard: "Buka Papan Pemuka",
                 photoPending: "Gambar Belum Ada",
                 selectInfo: "Memilih pemantau akan membuka papan pemuka masa nyata mereka.",
-                supervisorTitle: "Penyelia Projek", supervisorDesc: "Penyeliaan dan bimbingan projek Sistem Pemantauan IV Pintar.", selectAlertPrompt: "Klik pemberitahuan di sebelah kiri untuk melihat butiran.", userName: "Nama Pengguna", saveUser: "Simpan Pengguna", userAdded: "Pengguna telah ditambah pada skrin ini.", preferencesSavedBrowser: "Tetapan pemberitahuan disimpan pada pelayar ini."
+                supervisorTitle: "Penyelia Projek", supervisorDesc: "Penyeliaan dan bimbingan projek Sistem Pemantauan IV Pintar.", selectAlertPrompt: "Klik pemberitahuan di sebelah kiri untuk melihat butiran.", userName: "Nama Pengguna", saveUser: "Simpan Pengguna", userAdded: "Pengguna telah ditambah pada skrin ini.", preferencesSavedBrowser: "Tetapan pemberitahuan disimpan pada pelayar ini.", stopAlarmBagRemoved: "Henti Alarm / Beg Dikeluarkan", alarmStopped: "Alarm dihentikan. Mod beg dikeluarkan sedang aktif.", waitingNewBag: "Menunggu beg IV baharu", newBagDetected: "Beg IV baharu dikesan. Pemantauan dimulakan semula.", preparingExcel: "Sedang menyediakan laporan Excel...", excelDownloaded: "Laporan Excel telah dimuat turun.", excelFailed: "Muat turun Excel gagal. Tekan Refresh, kemudian klik Eksport Excel semula."
             }
         };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=phone-alarm-final"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=alarm-stop-excel-fix-v2"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

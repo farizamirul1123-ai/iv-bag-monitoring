@@ -676,6 +676,7 @@ def build_dashboard_payload():
 
 
 @app.route("/export/excel")
+@app.route("/export/excel/")
 def export_excel():
     patients = PatientSlot.query.order_by(PatientSlot.id).limit(2).all()
     readings = Reading.query.order_by(Reading.created_at.desc()).all()
@@ -746,12 +747,17 @@ def export_excel():
     output.seek(0)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    return send_file(
+    response = send_file(
         output,
         as_attachment=True,
         download_name=f"iv_monitoring_data_{timestamp}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        max_age=0,
     )
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.route("/acknowledge-alert/<int:alert_id>", methods=["POST"])

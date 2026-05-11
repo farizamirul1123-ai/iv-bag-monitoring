@@ -3254,3 +3254,51 @@ body {
 
 /* 500 ml calibration + lecturer quarter notification upgrade */
 .quarter-notification-box i{color:#0a8ea1!important}.quarter-notification-box strong small{display:block;margin-top:3px;color:#405b9b;font-size:.68rem!important;font-weight:800!important}.quarter-notification-box [data-patient-quarter]{display:inline-flex;align-items:center;justify-content:center;min-width:46px;border-radius:8px;background:#e8fbff;color:#07899a;padding:4px 8px;font-weight:900}.patient-accent-2 .quarter-notification-box [data-patient-quarter]{background:#fff0e4;color:#fb7a18}.report-analysis-chart{height:320px!important;margin-top:18px}.quarter-alert-pulse{animation:quarterPulse 1.15s ease both}@keyframes quarterPulse{0%{box-shadow:0 0 0 0 rgba(6,152,169,.34)}35%{box-shadow:0 0 0 9px rgba(6,152,169,.14);transform:translateY(-1px)}100%{box-shadow:var(--softShadow);transform:translateY(0)}}@media(min-width:1181px){.monitor-metric-row{grid-template-columns:84px 1.05fr 1.08fr 1.05fr 1.05fr 1.05fr 1.12fr .98fr!important}.metric-box strong{font-size:1.55rem}.quarter-notification-box strong{font-size:1.35rem!important}}@media(max-width:1180px){.monitor-metric-row{grid-template-columns:1fr 1fr!important}.quarter-notification-box strong small{font-size:.72rem!important}}@media(max-width:720px){.report-analysis-chart{height:280px!important}.quarter-notification-box [data-patient-quarter]{min-width:42px}}
+
+/* Alarm stop control added without changing the original dashboard layout. */
+.alarm-control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 18px 16px;
+    margin-top: -2px;
+}
+.monitor-alarm-row {
+    padding: 0 22px 14px;
+    margin-top: 0;
+    justify-content: flex-start;
+}
+.stop-alarm-button {
+    border: 1px solid #ffd0d0;
+    background: #fff7f7;
+    color: #c5162f;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 850;
+    font-size: .82rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, background .16s ease, color .16s ease, border-color .16s ease;
+}
+.stop-alarm-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 9px 18px rgba(197, 22, 47, .13);
+}
+.stop-alarm-button.stopped {
+    background: #effaf4;
+    color: #0a8a45;
+    border-color: #bfeccf;
+}
+.alarm-control-row small {
+    color: #60708d;
+    font-weight: 700;
+    font-size: .76rem;
+    line-height: 1.25;
+}
+@media(max-width:720px){
+    .alarm-control-row,.monitor-alarm-row{align-items:flex-start;flex-direction:column;padding-left:14px;padding-right:14px;}
+    .stop-alarm-button{width:100%;justify-content:center;}
+}

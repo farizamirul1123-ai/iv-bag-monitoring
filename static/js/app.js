@@ -13,6 +13,8 @@
     // - 0/4 or critical empty level = repeating phone-style alarm
     // - 1/4, 2/4, 3/4, 4/4 = short phone notification tones
     const EMPTY_ALARM_THRESHOLD_ML = 50;
+    const NEW_BAG_RESET_THRESHOLD_ML = 80;
+    const BAG_REMOVED_STORAGE_KEY = 'ivBagRemovedAcknowledged';
 
     function lang() { return document.body.dataset.initialLanguage || 'en'; }
     function dict() { return (window.TRANSLATIONS && (TRANSLATIONS[lang()] || TRANSLATIONS.en)) || {}; }
@@ -188,6 +190,57 @@
         }
     }
 
+    function readBagRemovedMap() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(BAG_REMOVED_STORAGE_KEY) || '{}');
+            return saved && typeof saved === 'object' ? saved : {};
+        } catch (e) { return {}; }
+    }
+
+    function writeBagRemovedMap(map) {
+        try { localStorage.setItem(BAG_REMOVED_STORAGE_KEY, JSON.stringify(map || {})); }
+        catch (e) { console.warn('Bag removed state save failed', e); }
+    }
+
+    function isBagRemovedAcknowledged(id) {
+        return Boolean(readBagRemovedMap()[String(id)]);
+    }
+
+    function setBagRemovedAcknowledged(id, value) {
+        const key = String(id);
+        const map = readBagRemovedMap();
+        if (value) map[key] = true;
+        else delete map[key];
+        writeBagRemovedMap(map);
+        updateBagSessionUI(id, Boolean(value));
+    }
+
+    function updateBagSessionUI(id, acknowledged) {
+        document.querySelectorAll(`[data-action="stop-empty-alarm"][data-patient-id="${id}"]`).forEach(btn => {
+            btn.classList.toggle('stopped', Boolean(acknowledged));
+            const span = btn.querySelector('span');
+            if (span) span.textContent = acknowledged ? t('waitingNewBag', 'Waiting for new IV bag') : t('stopAlarmBagRemoved', 'Stop Alarm / Bag Removed');
+        });
+        document.querySelectorAll(`[data-bag-session-note="${id}"]`).forEach(note => {
+            note.textContent = acknowledged ? t('alarmStopped', 'Alarm stopped. Bag removed mode is active.') : '';
+        });
+    }
+
+    function resetBagRemovedIfNewBag(id, remainingMl, name) {
+        if (remainingMl >= NEW_BAG_RESET_THRESHOLD_ML && isBagRemovedAcknowledged(id)) {
+            setBagRemovedAcknowledged(id, false);
+            lastQuarterByPatient[id] = undefined;
+            toast(`${name}: ${t('newBagDetected', 'New IV bag detected. Monitoring restarted.')}`);
+        }
+    }
+
+    function stopAlarmForPatient(id) {
+        setBagRemovedAcknowledged(id, true);
+        stopEmptyAlarm(id);
+        pulseQuarterIndicator(id);
+        toast(t('alarmStopped', 'Alarm stopped. Bag removed mode is active.'));
+    }
+
 
     function playCurrentStatusSoundsAfterUnlock() {
         const data = window.__LAST_DASHBOARD_DATA__;
@@ -198,11 +251,13 @@
             const remainingMl = clampVolume(p.remaining_weight_g ?? p.current_weight_g);
             const quarter = Number.isFinite(Number(p.volume_quarter)) ? Number(p.volume_quarter) : quarterFromVolume(remainingMl);
             const status = normStatus(p.current_status);
+            resetBagRemovedIfNewBag(id, remainingMl, name);
             const emptyOrCritical = quarter <= 0 || remainingMl <= EMPTY_ALARM_THRESHOLD_ML || status === 'Critical';
-            if (emptyOrCritical) {
+            if (emptyOrCritical && !isBagRemovedAcknowledged(id)) {
                 startEmptyAlarm(id, name);
-            } else if (quarter > 0) {
-                playPhoneNotification(quarter);
+            } else {
+                stopEmptyAlarm(id);
+                if (quarter > 0 && !isBagRemovedAcknowledged(id)) playPhoneNotification(quarter);
             }
         });
     }
@@ -225,8 +280,13 @@
     function handleQuarterNotification(id, quarter, name, remainingMl, status) {
         if (!Number.isFinite(quarter)) return;
 
-        const emptyOrCritical = quarter <= 0 || clampVolume(remainingMl) <= EMPTY_ALARM_THRESHOLD_ML || normStatus(status) === 'Critical';
-        if (emptyOrCritical) {
+        const safeRemaining = clampVolume(remainingMl);
+        resetBagRemovedIfNewBag(id, safeRemaining, name);
+        const acknowledgedRemoved = isBagRemovedAcknowledged(id);
+        updateBagSessionUI(id, acknowledgedRemoved);
+
+        const emptyOrCritical = quarter <= 0 || safeRemaining <= EMPTY_ALARM_THRESHOLD_ML || normStatus(status) === 'Critical';
+        if (emptyOrCritical && !acknowledgedRemoved) {
             startEmptyAlarm(id, name);
         } else {
             stopEmptyAlarm(id);
@@ -720,8 +780,45 @@
         });
     }
 
+    function excelFilenameFromResponse(response) {
+        const cd = response.headers.get('Content-Disposition') || response.headers.get('content-disposition') || '';
+        const utf = cd.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf) return decodeURIComponent(utf[1].replace(/['"]/g, ''));
+        const plain = cd.match(/filename="?([^";]+)"?/i);
+        if (plain) return plain[1];
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+        return `iv_monitoring_data_${stamp}.xlsx`;
+    }
+
+    async function downloadExcel(event, link) {
+        if (event) event.preventDefault();
+        const href = link && link.getAttribute('href') ? link.getAttribute('href') : '/export/excel';
+        toast(t('preparingExcel', 'Preparing Excel report...'));
+        try {
+            const response = await fetch(href, { method: 'GET', cache: 'no-store', credentials: 'same-origin' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            if (!blob || blob.size < 100) throw new Error('Empty Excel file');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = excelFilenameFromResponse(response);
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1200);
+            toast(t('excelDownloaded', 'Excel report downloaded.'));
+        } catch (err) {
+            console.error('Excel download failed', err);
+            toast(t('excelFailed', 'Excel download failed. Try Refresh, then click Export Excel again.'));
+            setTimeout(() => { window.location.href = href; }, 450);
+        }
+    }
+
     function setupButtons() {
         document.querySelectorAll('[data-action="refresh-dashboard"]').forEach(btn => btn.addEventListener('click', () => refresh(true)));
+        document.querySelectorAll('[data-action="download-excel"]').forEach(link => link.addEventListener('click', e => downloadExcel(e, link)));
+        document.querySelectorAll('[data-action="stop-empty-alarm"]').forEach(btn => btn.addEventListener('click', () => stopAlarmForPatient(btn.dataset.patientId)));
         document.querySelectorAll('[data-action="save-settings"]').forEach(btn => btn.addEventListener('click', () => { savePreferences(); toast(t('preferencesSavedBrowser', 'Notification preferences saved on this browser.')); }));
         document.querySelectorAll('[data-action="reset-settings"]').forEach(btn => btn.addEventListener('click', () => { localStorage.removeItem('ivNotificationPreferences'); document.querySelectorAll('[data-toggle-pref] .toggle').forEach((t,i) => t.classList.toggle('on', i !== 3)); toast(t('resetDone', 'Settings restored on this screen.')); }));
         document.querySelectorAll('[data-demo-button]').forEach(btn => btn.addEventListener('click', () => toast(t('demoButtonNote', 'This button is active for dashboard demonstration.'))));
