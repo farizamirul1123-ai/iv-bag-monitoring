@@ -1,15 +1,112 @@
-# IV Monitoring System - Premium Template V10
+# IV Monitoring System - Load Cell Only + AI Voice Alert Update
 
-This version keeps the original Flask backend, PostgreSQL/Render support, ESP32 API endpoint, Excel export, bilingual BM/BI toggle, patient pages, alerts, and Chart.js graphs.
+This version keeps the existing design, Flask backend, PostgreSQL/Render support, ESP32 API endpoint, Excel export, bilingual BM/BI toggle, patient pages, alerts, and Chart.js graphs.
 
-## What was changed in V10
+## Main update in this version
 
-- Landing page redesigned into a professional website-template style.
-- Right landing area replaced with a clean dashboard preview instead of the previous awkward IV graphic layout.
-- Monitor selection page alignment fixed. The 1-2-3 stepper is centered and responsive.
-- Dashboard style refined with better card spacing, safer responsive layout, glass effect, cleaner chart containers, hover effects, and entrance animations.
-- Mobile responsiveness improved for phone and laptop views.
-- Added CSS animation effects: fade/slide entry, hover lift, shimmer accent, floating preview, animated chart-line effect, live pulse.
+The system is now updated to use **load cell monitoring only**. The previous drip/drop detector function has been removed from the ESP32 sketches and the dashboard interface.
+
+### What changed
+
+- ESP32 now sends only load-cell weight data from HX711.
+- Dashboard calculates IV level from weight using `500 ml = 500 g`.
+- Dashboard estimates flow condition from the **weight trend over time**.
+- User-facing drip rate/drop rate sections have been replaced with:
+  - Load Cell Flow
+  - Weight Flow Rate
+  - Flow Status
+  - Load Cell Flow Comparison
+- Manual reading form now requires weight input only.
+- Excel report now exports load-cell flow rate and load-cell flow status.
+- Browser notifications, dashboard toast notifications, clinical sound alerts and bilingual AI voice alerts are added.
+
+## Load-cell flow warning logic
+
+The system does not use a physical flow sensor. Therefore, upstream/downstream problems are detected as an **early warning estimation** based on the load-cell weight trend.
+
+The dashboard can classify these conditions:
+
+- Normal Flow
+- No Flow
+- Slow Flow
+- Fast Flow
+- Sudden Drop
+- Unstable Weight
+- Bag Empty
+- Stabilizing
+
+Examples:
+
+- If the weight does not decrease for a period of time, the system warns `No Flow`.
+- If the weight decreases too slowly, the system warns `Slow Flow`.
+- If the weight decreases too quickly, the system warns `Fast Flow`.
+- If the weight suddenly drops, the system warns `Sudden Drop`.
+- If the weight increases unexpectedly, the system warns `Unstable Weight`.
+
+## AI voice alert
+
+The dashboard uses browser speech synthesis.
+
+- If the dashboard is in Bahasa Melayu, the voice alert uses Malay wording.
+- If the dashboard is in English, the voice alert uses English wording.
+
+Example Malay voice alert:
+
+```text
+Perhatian. Pesakit A ada masalah pada aliran IV. Sila periksa pesakit.
+```
+
+Example English voice alert:
+
+```text
+Attention. Patient A has a possible IV flow problem. Please check the patient.
+```
+
+Important: Browser security requires one click/tap on the dashboard page before sound or voice can play.
+
+## Browser notification
+
+Browser pop-up notifications are supported through the browser Notification API.
+
+Requirements:
+
+- Use HTTPS, such as the Render URL, or localhost for testing.
+- When the browser asks for notification permission, click **Allow**.
+- If notifications still do not appear, check Chrome/Edge site settings and allow notifications for the website.
+
+## Alarm sound update
+
+The continuous ECG-style flatline sound is not used. This version uses:
+
+- Soft clinical chime for quarter-level notifications.
+- Pulsed clinical call-bell style alarm for empty/critical IV level.
+- AI voice alert for abnormal flow or critical warnings.
+
+## ESP32 files
+
+Use these files according to patient monitor:
+
+```text
+esp32/esp32_hx711_iv_monitor/esp32_hx711_iv_monitor.ino      -> Patient 1
+esp32/esp32_hx711_iv_monitor/esp32_hx711_iv_monitor_2/esp32_hx711_iv_monitor_2.ino  -> Patient 2
+```
+
+Current calibration factors:
+
+- Patient 1 sketch: `-521.70`
+- Patient 2 sketch: `-526.64`
+
+If the load-cell reading becomes negative, change:
+
+```cpp
+bool REVERSE_WEIGHT_SIGN = false;
+```
+
+to:
+
+```cpp
+bool REVERSE_WEIGHT_SIGN = true;
+```
 
 ## Run locally
 
@@ -24,36 +121,14 @@ Then open:
 http://127.0.0.1:5000
 ```
 
-For ESP32 on the same WiFi network, use the computer IP address shown in the terminal or by `ipconfig`.
-
-## Important file changed for design
+## Important files changed
 
 ```text
-templates/landing.html
-templates/select_monitor.html
+app.py
+templates/base.html
+templates/dashboard.html
+static/js/app.js
 static/css/styles.css
+esp32/esp32_hx711_iv_monitor/esp32_hx711_iv_monitor.ino
+esp32/esp32_hx711_iv_monitor/esp32_hx711_iv_monitor_2/esp32_hx711_iv_monitor_2.ino
 ```
-
-Backend and ESP32 files are now updated for 500 ml calibration and quarter notification analysis.
-
-## 500 ml Calibration + Quarter Notification Update
-
-This version is updated for the 500 ml = 500 g IV bag test.
-
-- `esp32_hx711_iv_monitor.ino` calibration factor: `-521.70` for the 5 kg load cell test reading of 37.0 g with 500 g load.
-- `esp32_hx711_iv_monitor_2.ino` calibration factor: `-585.15` for the 1 kg load cell test reading of about 41–42 g with 500 g load.
-- Dashboard weight/volume graphs are fixed to the range `0–500 ml`.
-- Readings above 500 are clamped to 500 so the graph cannot exceed the IV bag capacity.
-- Quarter notification logic is added:
-  - `1/4` = 1 blink/sound
-  - `2/4` = 2 blinks/sounds
-  - `3/4` = 3 blinks/sounds
-  - `4/4` = 4 blinks/sounds
-- Optional ESP32 buzzer output is set to GPIO18 and LED blink output is set to GPIO2.
-- A new report graph, `Quantity Notification Analysis`, shows the quarter notification level over time.
-
-## Browser Sound Update
-- No hardware buzzer is required. Sounds are generated by the dashboard/browser.
-- 1/4, 2/4, 3/4 and 4/4 levels play short phone-style notification tones.
-- Empty/critical IV level plays a repeating phone-style alarm until the level returns above the critical range.
-- Browser security requires one click/tap on the dashboard page before sound can play.

@@ -3302,3 +3302,84 @@ body {
     .alarm-control-row,.monitor-alarm-row{align-items:flex-start;flex-direction:column;padding-left:14px;padding-right:14px;}
     .stop-alarm-button{width:100%;justify-content:center;}
 }
+
+/* Load-cell-only flow status refinement */
+.flow-status-box .status-pill,
+.metric-box.flow-status-box .status-pill,
+.vital-list .flow-status-box .status-pill {
+    width: fit-content;
+    min-width: 108px;
+    font-size: .78rem !important;
+    padding: 7px 10px;
+    white-space: nowrap;
+}
+.vital-list .flow-status-box strong.status-pill {
+    grid-column: 2;
+    font-size: .78rem !important;
+}
+.metric-box.flow-status-box strong.status-pill {
+    font-size: .8rem !important;
+    align-self: start;
+    margin-top: 3px;
+}
+@media(max-width:720px){
+    .flow-status-box .status-pill,
+    .metric-box.flow-status-box .status-pill,
+    .vital-list .flow-status-box .status-pill { min-width: 96px; white-space: normal; }
+}
+
+/* Final load-cell-only label cleanup: prevent compact dashboard text from being cut off. */
+.vital-list span,
+.metric-box span,
+.metric-level span {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.18 !important;
+}
+.vital-list div {
+    min-width: 0 !important;
+}
+.vital-list strong,
+.metric-box strong,
+.metric-level strong {
+    min-width: 0 !important;
+}
+.chart-title strong[data-i18n="flowRateComparison"] {
+    font-size: 1.05rem !important;
+    letter-spacing: .01em;
+}
+@media(min-width:1501px){
+    .patient-card-body {
+        grid-template-columns: 76px minmax(92px,.88fr) minmax(148px,1.1fr) !important;
+        gap: 12px !important;
+    }
+    .vital-list {
+        padding-left: 10px !important;
+        gap: 9px !important;
+    }
+    .vital-list div {
+        grid-template-columns: 20px minmax(0,1fr) !important;
+        gap: 2px 7px !important;
+    }
+    .vital-list span { font-size: .68rem !important; }
+    .vital-list strong { font-size: .96rem !important; }
+    .quarter-notification-box strong { font-size: 1.18rem !important; }
+    .quarter-notification-box strong small { font-size: .62rem !important; }
+    .flow-status-box .status-pill,
+    .vital-list .flow-status-box strong.status-pill {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        white-space: normal !important;
+        padding: 6px 8px !important;
+        font-size: .68rem !important;
+    }
+}
+@media(max-width:1500px) and (min-width:1181px){
+    .patient-card-body {
+        grid-template-columns: 88px minmax(108px,.9fr) minmax(165px,1.1fr) !important;
+    }
+    .vital-list div {
+        grid-template-columns: 22px minmax(0,1fr) !important;
+    }
+}

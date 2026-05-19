@@ -4,6 +4,13 @@
 #include "HX711.h"
 #include <math.h>
 
+// ============================================================
+// IV MONITORING ESP32 - LOAD CELL ONLY VERSION
+// Sensor used: HX711 + load cell sahaja.
+// Drop/drip detector sudah dibuang. Dashboard akan anggar flow
+// berdasarkan trend berat load cell yang turun dari masa ke masa.
+// ============================================================
+
 // ===============================
 // 1. WIFI SETTING
 // ===============================
@@ -24,9 +31,7 @@ const int PATIENT_ID = 1;
 
 HX711 scale;
 
-// Calibration factor updated using 500 ml = 500 g test.
-// Formula: NEW_FACTOR = OLD_FACTOR x (READING_WITH_500G / 500).
-// 5kg load cell: 500 g standard read 37.0 g => -521.70
+// 5kg load cell calibration factor.
 float CALIBRATION_FACTOR = -521.70;
 
 // Kalau bacaan jadi negatif, cuba tukar false kepada true.
@@ -37,46 +42,33 @@ bool REVERSE_WEIGHT_SIGN = false;
 bool AUTO_TARE_ON_START = true;
 
 // IV bag limit untuk dashboard: 500 ml = 500 g.
-// Semua bacaan berat/volume akan dikawal dalam julat 0 - 500 sahaja.
 const float IV_CAPACITY_ML = 500.0;
 const float QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4.0;
 
-// Optional hardware notification. Sambung active buzzer + ke GPIO18, - ke GND.
-// LED onboard ESP32 biasanya GPIO2. Kalau tidak pakai buzzer, code masih boleh jalan.
+// Optional hardware alert. Dashboard tetap ada sound + AI voice walaupun buzzer ini tidak dipasang.
 #define ALERT_BUZZER_PIN 18
 #define ALERT_LED_PIN 2
 bool ENABLE_HARDWARE_ALERT = true;
 int lastNotifiedQuarter = -1;
-const int ALERT_BEEP_MS = 160;
+const int ALERT_BEEP_MS = 130;
 const int ALERT_GAP_MS = 120;
 
 // ===============================
-// 3. DROP DETECTOR PIN
+// 3. TIMING
 // ===============================
-#define DROP_ADC_PIN 34
-
-int idleDropADC = 0;
-bool dropActive = false;
-
-unsigned long totalDrops = 0;
-unsigned long windowDrops = 0;
-
-unsigned long lastDropTime = 0;
 unsigned long lastSendTime = 0;
 unsigned long lastSerialTime = 0;
 
-const unsigned long DROP_DEBOUNCE_MS = 120;
-const unsigned long SEND_INTERVAL_MS = 5000;    // stabil untuk Render, website refresh setiap 2 saat
+const unsigned long SEND_INTERVAL_MS = 5000;    // hantar ke Render setiap 5 saat
 const unsigned long SERIAL_INTERVAL_MS = 2000;  // print serial setiap 2 saat
-const int DROP_ADC_THRESHOLD = 600;
 
-const float SLOW_DROPS_PER_MIN = 10.0;
-const float FAST_DROPS_PER_MIN = 80.0;
-
-// Function declarations for Arduino/C++ compatibility.
+// Function declarations.
 float clampIVVolume(float value);
 int getQuarterLevel(float weightGrams);
 void notifyQuarterIfChanged(float weightGrams);
+float readWeightGrams();
+void connectWiFi();
+void sendDataToServer(float weightGrams);
 
 // ===============================
 // 4. WIFI
@@ -109,53 +101,16 @@ void connectWiFi() {
 }
 
 // ===============================
-// 5. DROP SENSOR
+// 5. LOAD CELL
 // ===============================
-int readAverageADC(int pin, int samples) {
-  long total = 0;
-  for (int i = 0; i < samples; i++) {
-    total += analogRead(pin);
-    delay(5);
-  }
-  return total / samples;
+float clampIVVolume(float value) {
+  if (value < 0.0) return 0.0;
+  if (value > IV_CAPACITY_ML) return IV_CAPACITY_ML;
+  return value;
 }
 
-void calibrateDropIdle() {
-  Serial.println("Calibrating drop detector idle value...");
-  Serial.println("Pastikan tiada titisan / objek lalu antara LED dan LDR.");
-  delay(1000);
-  idleDropADC = readAverageADC(DROP_ADC_PIN, 100);
-  Serial.print("Drop detector idle ADC value: ");
-  Serial.println(idleDropADC);
-}
-
-void updateDropDetection() {
-  int adcValue = analogRead(DROP_ADC_PIN);
-  int difference = abs(adcValue - idleDropADC);
-  bool currentActive = difference > DROP_ADC_THRESHOLD;
-  unsigned long now = millis();
-
-  if (currentActive && !dropActive) {
-    if (now - lastDropTime > DROP_DEBOUNCE_MS) {
-      totalDrops++;
-      windowDrops++;
-      lastDropTime = now;
-
-      Serial.print("Drop detected! Total drops: ");
-      Serial.print(totalDrops);
-      Serial.print(" | ADC: ");
-      Serial.println(adcValue);
-    }
-  }
-
-  dropActive = currentActive;
-}
-
-// ===============================
-// 6. LOAD CELL
-// ===============================
 float readWeightGrams() {
-  // Jangan guna last valid weight. Website mesti ikut Serial Monitor 100%.
+  // Website mesti ikut Serial Monitor. Kalau HX711 tidak ready, hantar 0.00 g.
   if (!scale.is_ready()) {
     Serial.println("HX711 not ready. Reading sent as 0.00 g.");
     return 0.0;
@@ -167,6 +122,7 @@ float readWeightGrams() {
     weight = -weight;
   }
 
+  // Buang noise kecil sekitar kosong.
   if (abs(weight) < 2.0) {
     weight = 0.0;
   }
@@ -175,22 +131,12 @@ float readWeightGrams() {
     weight = 0.0;
   }
 
-  // Limit graph/data to 0 - 500 ml/g only.
-  weight = clampIVVolume(weight);
-
-  return weight;
+  return clampIVVolume(weight);
 }
 
-
 // ===============================
-// 7. QUARTER NOTIFICATION
+// 6. QUARTER NOTIFICATION HARDWARE
 // ===============================
-float clampIVVolume(float value) {
-  if (value < 0.0) return 0.0;
-  if (value > IV_CAPACITY_ML) return IV_CAPACITY_ML;
-  return value;
-}
-
 int getQuarterLevel(float weightGrams) {
   float volumeMl = clampIVVolume(weightGrams);
   if (volumeMl <= 0.5) return 0;
@@ -203,7 +149,7 @@ int getQuarterLevel(float weightGrams) {
 void beepOnce() {
   if (!ENABLE_HARDWARE_ALERT) return;
   digitalWrite(ALERT_LED_PIN, HIGH);
-  tone(ALERT_BUZZER_PIN, 2000);
+  tone(ALERT_BUZZER_PIN, 1500);
   delay(ALERT_BEEP_MS);
   noTone(ALERT_BUZZER_PIN);
   digitalWrite(ALERT_LED_PIN, LOW);
@@ -213,7 +159,7 @@ void beepOnce() {
 void notifyQuarterIfChanged(float weightGrams) {
   int quarter = getQuarterLevel(weightGrams);
 
-  // First reading is used as baseline so ESP32 will not beep non-stop at startup.
+  // First reading jadi baseline supaya ESP32 tidak beep masa startup.
   if (lastNotifiedQuarter < 0) {
     lastNotifiedQuarter = quarter;
     return;
@@ -224,7 +170,7 @@ void notifyQuarterIfChanged(float weightGrams) {
   lastNotifiedQuarter = quarter;
 
   if (quarter <= 0) {
-    Serial.println("Quarter notification: 0/4, IV empty/no load. No beep.");
+    Serial.println("Quarter notification: 0/4, IV empty/no load. Dashboard critical alarm active.");
     return;
   }
 
@@ -240,19 +186,9 @@ void notifyQuarterIfChanged(float weightGrams) {
 }
 
 // ===============================
-// 8. STATUS
+// 7. SEND DATA
 // ===============================
-String getDripStatus(float dropsPerMinute) {
-  if (dropsPerMinute <= 0.0) return "No Drip";
-  if (dropsPerMinute < SLOW_DROPS_PER_MIN) return "Slow";
-  if (dropsPerMinute > FAST_DROPS_PER_MIN) return "Fast";
-  return "Normal";
-}
-
-// ===============================
-// 9. SEND DATA
-// ===============================
-void sendDataToServer(float weightGrams, float dropsPerMinute, String dripStatus) {
+void sendDataToServer(float weightGrams) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi not connected. Data not sent.");
     connectWiFi();
@@ -277,18 +213,15 @@ void sendDataToServer(float weightGrams, float dropsPerMinute, String dripStatus
   jsonPayload += "\"remaining_ml\":" + String(remainingMl, 2) + ",";
   jsonPayload += "\"capacity_ml\":" + String(IV_CAPACITY_ML, 0) + ",";
   jsonPayload += "\"quarter_level\":" + String(quarterLevel) + ",";
-  jsonPayload += "\"notification_blinks\":" + String(quarterLevel) + ",";
-  jsonPayload += "\"drop_count\":" + String(totalDrops) + ",";
-  jsonPayload += "\"drops_per_min\":" + String(dropsPerMinute, 2) + ",";
-  jsonPayload += "\"drip_status\":\"" + dripStatus + "\"";
+  jsonPayload += "\"sensor_mode\":\"load_cell_only\"";
   jsonPayload += "}";
 
   Serial.println();
-  Serial.println("Sending data to server:");
+  Serial.println("Sending load-cell data to server:");
   Serial.println(jsonPayload);
   Serial.print("Weight sent to website: ");
   Serial.print(weightGrams, 2);
-  Serial.println(" g");
+  Serial.println(" g / ml");
 
   int httpResponseCode = http.POST(jsonPayload);
 
@@ -307,7 +240,7 @@ void sendDataToServer(float weightGrams, float dropsPerMinute, String dripStatus
 }
 
 // ===============================
-// 10. SETUP
+// 8. SETUP
 // ===============================
 void setup() {
   Serial.begin(115200);
@@ -316,16 +249,14 @@ void setup() {
   Serial.println();
   Serial.println("==================================");
   Serial.println("IV Bag Monitoring ESP32 Started");
-  Serial.println("Load Cell + Drop Detector");
+  Serial.println("Mode: Load Cell Only");
+  Serial.println("Dashboard estimates flow using weight trend.");
   Serial.println("==================================");
 
   pinMode(ALERT_LED_PIN, OUTPUT);
   pinMode(ALERT_BUZZER_PIN, OUTPUT);
   digitalWrite(ALERT_LED_PIN, LOW);
   digitalWrite(ALERT_BUZZER_PIN, LOW);
-
-  analogReadResolution(12);
-  analogSetPinAttenuation(DROP_ADC_PIN, ADC_11db);
 
   scale.begin(HX711_DOUT_PIN, HX711_SCK_PIN);
   scale.set_scale(CALIBRATION_FACTOR);
@@ -341,7 +272,6 @@ void setup() {
     Serial.println("AUTO_TARE_ON_START = false. Tare skipped.");
   }
 
-  calibrateDropIdle();
   connectWiFi();
 
   lastSendTime = millis();
@@ -349,20 +279,17 @@ void setup() {
 }
 
 // ===============================
-// 11. LOOP
+// 9. LOOP
 // ===============================
 void loop() {
-  updateDropDetection();
   unsigned long now = millis();
 
   if (now - lastSerialTime >= SERIAL_INTERVAL_MS) {
     float currentWeight = readWeightGrams();
     notifyQuarterIfChanged(currentWeight);
-    int adcNow = analogRead(DROP_ADC_PIN);
-    int diffNow = abs(adcNow - idleDropADC);
 
     Serial.println();
-    Serial.println("----- Current Reading -----");
+    Serial.println("----- Current Load Cell Reading -----");
     Serial.print("Patient ID: ");
     Serial.println(PATIENT_ID);
     Serial.print("Weight/Volume: ");
@@ -371,39 +298,27 @@ void loop() {
     Serial.print("Quarter Balance: ");
     Serial.print(getQuarterLevel(currentWeight));
     Serial.println("/4");
-    Serial.print("Drop ADC: ");
-    Serial.print(adcNow);
-    Serial.print(" | Idle ADC: ");
-    Serial.print(idleDropADC);
-    Serial.print(" | Difference: ");
-    Serial.println(diffNow);
-    Serial.print("Total Drops: ");
-    Serial.println(totalDrops);
-    Serial.println("---------------------------");
+    Serial.println("Drop sensor: Not used");
+    Serial.println("-------------------------------------");
 
     lastSerialTime = now;
   }
 
   if (now - lastSendTime >= SEND_INTERVAL_MS) {
     float currentWeight = readWeightGrams();
-    float dropsPerMinute = windowDrops * (60000.0 / SEND_INTERVAL_MS);
-    String dripStatus = getDripStatus(dropsPerMinute);
 
     Serial.println();
     Serial.print("===== ");
     Serial.print(SEND_INTERVAL_MS / 1000);
-    Serial.println(" Second Summary =====");
-    Serial.print("Drops in window: ");
-    Serial.println(windowDrops);
-    Serial.print("Estimated drops/min: ");
-    Serial.println(dropsPerMinute);
-    Serial.print("Drip Status: ");
-    Serial.println(dripStatus);
-    Serial.println("=============================");
+    Serial.println(" Second Load Cell Summary =====");
+    Serial.print("Weight/Volume sent: ");
+    Serial.print(currentWeight, 2);
+    Serial.println(" g / ml");
+    Serial.println("Flow status will be calculated in dashboard from weight trend.");
+    Serial.println("========================================");
 
-    sendDataToServer(currentWeight, dropsPerMinute, dripStatus);
+    sendDataToServer(currentWeight);
 
-    windowDrops = 0;
     lastSendTime = now;
   }
 }

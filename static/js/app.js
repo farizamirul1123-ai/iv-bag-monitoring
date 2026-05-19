@@ -5,16 +5,26 @@
     const QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4;
     const lastQuarterByPatient = {};
     const activeEmptyAlarmPatients = new Set();
+    const notifiedAlertKeys = new Set(readNotifiedAlertKeys());
     let audioCtx = null;
     let emptyAlarmTimer = null;
     let audioUnlocked = false;
+    let notificationPermissionAsked = false;
 
-    // Browser-only sound system:
-    // - 0/4 or critical empty level = repeating phone-style alarm
-    // - 1/4, 2/4, 3/4, 4/4 = short phone notification tones
+    // Browser-only alert system:
+    // - 0/4 or critical empty level = pulsed clinical call-bell style alarm
+    // - 1/4, 2/4, 3/4, 4/4 = short soft chime notifications
+    // - abnormal load-cell flow trend = bilingual AI voice alert + browser notification
     const EMPTY_ALARM_THRESHOLD_ML = 50;
     const NEW_BAG_RESET_THRESHOLD_ML = 80;
     const BAG_REMOVED_STORAGE_KEY = 'ivBagRemovedAcknowledged';
+
+    function readNotifiedAlertKeys() {
+        try {
+            const keys = JSON.parse(sessionStorage.getItem('ivNotifiedAlertKeys') || '[]');
+            return Array.isArray(keys) ? keys : [];
+        } catch (e) { return []; }
+    }
 
     function lang() { return document.body.dataset.initialLanguage || 'en'; }
     function dict() { return (window.TRANSLATIONS && (TRANSLATIONS[lang()] || TRANSLATIONS.en)) || {}; }
@@ -116,6 +126,80 @@
         return !toggles[2] || toggles[2].classList.contains('on');
     }
 
+    function screenNotificationEnabled() {
+        try {
+            const saved = JSON.parse(localStorage.getItem('ivNotificationPreferences') || 'null');
+            if (Array.isArray(saved) && saved.length > 4) return Boolean(saved[4]);
+        } catch (e) { }
+        const toggles = document.querySelectorAll('[data-toggle-pref] .toggle');
+        return !toggles[4] || toggles[4].classList.contains('on');
+    }
+
+    function browserNotificationSupported() {
+        return ('Notification' in window) && (window.isSecureContext || ['localhost', '127.0.0.1', '::1'].includes(location.hostname));
+    }
+
+    function requestBrowserNotificationPermission(showFeedback = false) {
+        try {
+            if (!screenNotificationEnabled()) return;
+            if (!browserNotificationSupported()) {
+                if (showFeedback) toast(t('browserNotificationsNeedHttps', 'Browser notifications need HTTPS or localhost. Use the Render HTTPS link for outside pop-ups.'));
+                return;
+            }
+            if (Notification.permission === 'granted') {
+                if (showFeedback) {
+                    toast(t('browserNotificationsActive', 'Browser notifications are active.'));
+                    showBrowserNotification('IV Monitoring', t('browserNotificationsActive', 'Browser notifications are active.'));
+                }
+                return;
+            }
+            if (Notification.permission === 'denied') {
+                if (showFeedback) toast(t('browserNotificationsDenied', 'Browser notifications are blocked. Enable them in browser site settings.'));
+                return;
+            }
+            if (!notificationPermissionAsked || showFeedback) {
+                notificationPermissionAsked = true;
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        toast(t('browserNotificationsActive', 'Browser notifications are active.'));
+                        showBrowserNotification('IV Monitoring', t('browserNotificationsActive', 'Browser notifications are active.'));
+                    } else if (showFeedback) {
+                        toast(t('browserNotificationsDenied', 'Browser notifications are blocked. Enable them in browser site settings.'));
+                    }
+                }).catch(() => {
+                    if (showFeedback) toast(t('browserNotificationsDenied', 'Browser notifications are blocked. Enable them in browser site settings.'));
+                });
+            }
+        } catch (e) { console.warn('Browser notification permission failed', e); }
+    }
+
+    function showBrowserNotification(title, body) {
+        try {
+            if (!screenNotificationEnabled() || !browserNotificationSupported()) return;
+            if (Notification.permission !== 'granted') return;
+            const n = new Notification(title || 'IV Monitoring', {
+                body: body || 'New IV monitoring notification.',
+                tag: String(title || 'iv-monitoring-alert'),
+                requireInteraction: false,
+                silent: false
+            });
+            setTimeout(() => n.close(), 7000);
+        } catch (e) { console.warn('Browser notification failed', e); }
+    }
+
+    function speakVoice(text) {
+        try {
+            if (!soundEnabled() || !('speechSynthesis' in window) || !text) return;
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang() === 'ms' ? 'ms-MY' : 'en-US';
+            utterance.rate = 0.92;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            window.speechSynthesis.speak(utterance);
+        } catch (e) { console.warn('Voice alert failed', e); }
+    }
+
     function ensureAudio() {
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -151,10 +235,10 @@
         if (!ctx) return;
         const repeats = Math.max(1, Math.min(4, Number(count || 1)));
         for (let i = 0; i < repeats; i++) {
-            const base = ctx.currentTime + (i * 0.46);
-            // A short two-note notification, closer to a phone notification than a buzzer beep.
-            playTone(base, 1046.5, 1396.9, 0.16, 0.13);
-            playTone(base + 0.18, 1568.0, 1975.5, 0.18, 0.10);
+            const base = ctx.currentTime + (i * 0.50);
+            // Soft clinical chime: clearer than phone notification, less annoying than ECG flatline.
+            playTone(base, 880, 1175, 0.12, 0.10);
+            playTone(base + 0.15, 660, 880, 0.16, 0.08);
         }
     }
 
@@ -163,11 +247,11 @@
         const ctx = ensureAudio();
         if (!ctx) return;
         const base = ctx.currentTime;
-        // Repeating phone-alarm style: rising and falling urgent tones.
-        playTone(base, 760, 1280, 0.34, 0.20);
-        playTone(base + 0.38, 1280, 760, 0.34, 0.20);
-        playTone(base + 0.86, 760, 1280, 0.34, 0.20);
-        playTone(base + 1.24, 1280, 760, 0.34, 0.20);
+        // Critical alarm: short pulsed call-bell pattern, not a continuous ECG flatline tone.
+        playTone(base, 988, 988, 0.14, 0.20);
+        playTone(base + 0.22, 988, 988, 0.14, 0.20);
+        playTone(base + 0.44, 988, 988, 0.14, 0.20);
+        playTone(base + 0.82, 740, 740, 0.22, 0.16);
     }
 
     function startEmptyAlarm(id, name) {
@@ -175,7 +259,12 @@
         activeEmptyAlarmPatients.add(String(id));
         if (before === activeEmptyAlarmPatients.size) return;
         pulseQuarterIndicator(id);
-        toast(`${name}: ${t('emptyAlarmToast', 'IV bag empty / critical - alarm active')}`);
+        const message = `${name}: ${t('emptyAlarmToast', 'IV bag empty / critical - alarm active')}`;
+        toast(message);
+        showBrowserNotification(t('notifications', 'Notifications'), message);
+        speakVoice(lang() === 'ms'
+            ? `Perhatian. ${name} berada pada tahap kritikal. Sila periksa pesakit dengan segera.`
+            : `Attention. ${name} is at critical IV level. Please check the patient immediately.`);
         playEmptyAlarmPulse();
         if (!emptyAlarmTimer) {
             emptyAlarmTimer = setInterval(playEmptyAlarmPulse, 2200);
@@ -230,7 +319,9 @@
         if (remainingMl >= NEW_BAG_RESET_THRESHOLD_ML && isBagRemovedAcknowledged(id)) {
             setBagRemovedAcknowledged(id, false);
             lastQuarterByPatient[id] = undefined;
-            toast(`${name}: ${t('newBagDetected', 'New IV bag detected. Monitoring restarted.')}`);
+            const message = `${name}: ${t('newBagDetected', 'New IV bag detected. Monitoring restarted.')}`;
+            toast(message);
+            showBrowserNotification(t('newBagDetected', 'New IV bag detected'), message);
         }
     }
 
@@ -266,6 +357,7 @@
         if (audioUnlocked) return;
         audioUnlocked = true;
         ensureAudio();
+        requestBrowserNotificationPermission();
         setTimeout(playCurrentStatusSoundsAfterUnlock, 80);
     }
 
@@ -302,8 +394,40 @@
 
         if (quarter > 0) {
             playPhoneNotification(quarter);
-            toast(`${name}: ${quarterText(quarter)} - ${blinkText(quarter)}`);
+            const message = `${name}: ${quarterText(quarter)} - ${blinkText(quarter)}`;
+            toast(message);
+            showBrowserNotification(t('quarterNotification', 'Quarter Alert'), message);
         }
+    }
+
+    function flowStatusLabel(status) {
+        const key = flowStatusKey(status);
+        return t(key, status || 'Normal Flow');
+    }
+
+    function flowStatusKey(status) {
+        const s = String(status || '').toLowerCase();
+        if (s.includes('no flow')) return 'noFlow';
+        if (s.includes('slow')) return 'slowFlow';
+        if (s.includes('fast')) return 'fastFlow';
+        if (s.includes('sudden')) return 'suddenDrop';
+        if (s.includes('unstable')) return 'unstableWeight';
+        if (s.includes('new bag')) return 'newBagDetected';
+        if (s.includes('empty')) return 'bagEmpty';
+        if (s.includes('stabil')) return 'stabilizing';
+        return 'normalFlow';
+    }
+
+    function flowSeverity(status) {
+        const key = flowStatusKey(status);
+        if (['noFlow', 'suddenDrop', 'bagEmpty'].includes(key)) return 'Critical';
+        if (['slowFlow', 'fastFlow', 'unstableWeight'].includes(key)) return 'Low';
+        return 'Normal';
+    }
+
+    function setFlowStatusClass(el, status) {
+        const sev = flowSeverity(status);
+        setStatusClass(el, sev);
     }
 
     function patientColor(id) { return Number(id) % 2 === 0 ? colors.orange : colors.teal; }
@@ -445,21 +569,23 @@
         charts[canvasId].update();
     }
 
-    function createDropComparison(data) {
-        const canvas = document.getElementById('dropComparisonChart');
+    function createFlowComparison(data) {
+        const canvas = document.getElementById('flowComparisonChart') || document.getElementById('dropComparisonChart');
         if (!canvas) return;
+        const flowData = data.flow_comparison || data.drop_comparison || {};
         if (!window.Chart) {
-            const labels = (data.drop_comparison && data.drop_comparison.labels) || [];
-            const series = (data.drop_comparison && data.drop_comparison.series) || [];
-            const first = series[0] || { drops: [] };
-            drawFallbackLine('dropComparisonChart', labels, (first.drops || []).map(v => Number(v || 0)), colors.teal, 'Drops/min', 40);
+            const labels = flowData.labels || [];
+            const series = flowData.series || [];
+            const first = series[0] || { rates: [], drops: [] };
+            const vals = first.rates || first.drops || [];
+            drawFallbackLine(canvas.id, labels, vals.map(v => Number(v || 0)), colors.teal, t('weightFlowRate', 'Flow Rate'), 120);
             return;
         }
-        const labels = (data.drop_comparison && data.drop_comparison.labels) || [];
-        const series = (data.drop_comparison && data.drop_comparison.series) || [];
+        const labels = flowData.labels || [];
+        const series = flowData.series || [];
         const datasets = series.map((s, i) => ({
             label: displayPatientName(s.patient_name, s.patient_id) || `${t('patient', 'Patient')} ${i + 1}`,
-            data: (s.drops || []).map(v => Number(v || 0)),
+            data: (s.rates || s.drops || []).map(v => Number(v || 0)),
             borderColor: i % 2 ? colors.orange : colors.teal,
             backgroundColor: 'transparent',
             borderWidth: 3,
@@ -469,9 +595,10 @@
             fill: false
         }));
         const all = datasets.flatMap(d => d.data);
-        const yMax = niceMax(all, 40);
-        if (!charts.dropComparisonChart) {
-            charts.dropComparisonChart = new Chart(canvas.getContext('2d'), {
+        const yMax = niceMax(all, 120);
+        const chartKey = canvas.id;
+        if (!charts[chartKey]) {
+            charts[chartKey] = new Chart(canvas.getContext('2d'), {
                 type: 'line',
                 data: { labels, datasets },
                 options: {
@@ -480,12 +607,13 @@
                 }
             });
         } else {
-            charts.dropComparisonChart.data.labels = labels;
-            charts.dropComparisonChart.data.datasets = datasets;
+            charts[chartKey].data.labels = labels;
+            charts[chartKey].data.datasets = datasets;
         }
-        charts.dropComparisonChart.options.scales.y.suggestedMax = yMax;
-        charts.dropComparisonChart.update();
+        charts[chartKey].options.scales.y.suggestedMax = yMax;
+        charts[chartKey].update();
     }
+
 
     function createQuarterAnalysis(data) {
         const canvas = document.getElementById('quarterAnalysisChart');
@@ -494,7 +622,7 @@
         const series = (data.quarter_analysis && data.quarter_analysis.series) || [];
         if (!window.Chart) {
             const first = series[0] || { quarters: [] };
-            drawFallbackLine('quarterAnalysisChart', labels, first.quarters || [], colors.teal, t('quarterNotification', 'Quarter Notification'), 4, 4);
+            drawFallbackLine('quarterAnalysisChart', labels, first.quarters || [], colors.teal, t('quarterNotification', 'Quarter Alert'), 4, 4);
             return;
         }
         const datasets = series.map((s, i) => ({
@@ -544,8 +672,9 @@
         setText(`[data-patient-bed="${id}"]`, p.bed_number || '-');
         setText(`[data-patient-current-weight="${id}"]`, fmtWeight(p.current_weight_g, 'g'));
         setText(`[data-patient-remaining-weight="${id}"]`, fmtWeight(remainingMl, 'ml'));
-        setText(`[data-patient-drop="${id}"]`, Math.round(Number(p.current_drop_rate || 0)));
+        const flowStatus = p.current_flow_status || p.current_drip_status || 'Normal Flow';
         setText(`[data-patient-flow="${id}"]`, Math.round(Number(p.current_flow_rate_ml_hr || 0)));
+        setText(`[data-patient-flow-status="${id}"]`, flowStatusLabel(flowStatus));
         setText(`[data-patient-quarter="${id}"]`, quarterText(quarter));
         setText(`[data-patient-notification="${id}"]`, blinkText(quarter));
         setText(`[data-patient-updated="${id}"]`, p.last_update_time || p.last_update_full || '-');
@@ -557,14 +686,15 @@
             e.style.background = Number(id) % 2 === 0 ? 'rgba(255,123,24,.55)' : 'rgba(26,193,224,.45)';
         });
         document.querySelectorAll(`[data-patient-status="${id}"]`).forEach(e => { e.textContent = statusLabel(status); setStatusClass(e, status); });
+        document.querySelectorAll(`[data-patient-flow-status="${id}"]`).forEach(e => { e.textContent = flowStatusLabel(flowStatus); setFlowStatusClass(e, flowStatus); });
 
         const readings = p.readings || [];
         const labels = readings.length ? readings.map(r => r.label) : [p.last_update_time || clock(new Date())];
         const weights = readings.length ? readings.map(r => clampVolume(r.remaining_ml ?? r.weight_g)) : [remainingMl];
-        const drops = readings.length ? readings.map(r => Number(r.drops_per_min || 0)) : [Number(p.current_drop_rate || 0)];
+        const flowRates = readings.length ? readings.map(r => Number(r.flow_rate_ml_hr || 0)) : [Number(p.current_flow_rate_ml_hr || 0)];
         createLine(`dashWeightChart${id}`, labels, weights, patientColor(id), t('weightMl', 'Volume (ml)'), 100, IV_CAPACITY_ML);
         createLine(`monitorWeightChart${id}`, labels, weights, patientColor(id), t('weightMl', 'Volume (ml)'), 100, IV_CAPACITY_ML);
-        createLine(`monitorDropChart${id}`, labels, drops, patientColor(id), t('dropsPerMin', 'Drops/min'), 40);
+        createLine(`monitorFlowChart${id}`, labels, flowRates, patientColor(id), t('weightFlowRate', 'Flow Rate'), 120);
         renderLiveLog(id, readings);
         handleQuarterNotification(id, quarter, name, remainingMl, status);
     }
@@ -573,36 +703,73 @@
         const body = document.getElementById(`liveLog${id}`);
         if (!body) return;
         const rows = (readings || []).slice(-5).reverse();
-        body.innerHTML = rows.map(r => `<tr><td>${r.label || '-'}</td><td>${Math.round(clampVolume(r.remaining_ml ?? r.weight_g))}</td><td>${Math.round(Number(r.drops_per_min || 0))}</td><td>${Math.round(Number(r.flow_rate_ml_hr || 0))}</td><td>${Math.round(Number(r.level_percent || 0))}</td><td>${r.quarter_label || quarterText(quarterFromVolume(r.remaining_ml ?? r.weight_g))}</td></tr>`).join('') || `<tr><td colspan="6">${t('noAlerts', 'No data')}</td></tr>`;
+        body.innerHTML = rows.map(r => `<tr><td>${r.label || '-'}</td><td>${Math.round(clampVolume(r.remaining_ml ?? r.weight_g))}</td><td>${Math.round(Number(r.flow_rate_ml_hr || 0))}</td><td>${flowStatusLabel(r.flow_status || r.drip_status)}</td><td>${Math.round(Number(r.level_percent || 0))}</td><td>${r.quarter_label || quarterText(quarterFromVolume(r.remaining_ml ?? r.weight_g))}</td></tr>`).join('') || `<tr><td colspan="6">${t('noAlerts', 'No data')}</td></tr>`;
+    }
+
+    function isFlowAlertType(type) {
+        const k = flowStatusKey(type);
+        return ['noFlow','slowFlow','fastFlow','suddenDrop','unstableWeight'].includes(k);
+    }
+
+    function alertVoiceMessage(a) {
+        const name = displayPatientName(a.patient_name, a.patient_id) || `${t('patient', 'Patient')} ${a.patient_id || ''}`;
+        if (lang() === 'ms') {
+            if (isFlowAlertType(a.alert_type)) return `Perhatian. ${name} ada masalah pada aliran IV. Sila periksa pesakit.`;
+            if (normStatus(a.alert_type) === 'Critical') return `Perhatian. ${name} berada pada tahap kritikal. Sila periksa pesakit dengan segera.`;
+            if (normStatus(a.alert_type) === 'Low') return `Perhatian. Tahap IV ${name} rendah. Sila pantau pesakit.`;
+            return `Perhatian. ${name} memerlukan pemeriksaan.`;
+        }
+        if (isFlowAlertType(a.alert_type)) return `Attention. ${name} has a possible IV flow problem. Please check the patient.`;
+        if (normStatus(a.alert_type) === 'Critical') return `Attention. ${name} is at critical IV level. Please check the patient immediately.`;
+        if (normStatus(a.alert_type) === 'Low') return `Attention. ${name} IV level is low. Please monitor the patient.`;
+        return `Attention. ${name} requires checking.`;
+    }
+
+    function handleAlertNotification(a) {
+        if (!a || a.acknowledged) return;
+        const key = String(a.id || `${a.patient_id}-${a.alert_type}-${a.created_at_full || a.created_at || ''}`);
+        if (notifiedAlertKeys.has(key)) return;
+        notifiedAlertKeys.add(key);
+        try { sessionStorage.setItem('ivNotifiedAlertKeys', JSON.stringify(Array.from(notifiedAlertKeys).slice(-100))); } catch (e) { }
+        const title = alertTitle(a);
+        const body = alertVoiceMessage(a);
+        if (screenNotificationEnabled()) toast(body);
+        showBrowserNotification(title, body);
+        speakVoice(body);
+        if (isFlowAlertType(a.alert_type)) playPhoneNotification(2);
     }
 
     function alertTitle(a) {
         const name = displayPatientName(a.patient_name, a.patient_id) || `${t('patient', 'Patient')} ${a.patient_id || ''}`;
+        if (isFlowAlertType(a.alert_type)) return `${name} – ${flowStatusLabel(a.alert_type)}`;
         const s = normStatus(a.alert_type);
         return `${name} – ${statusLabel(s)}`;
     }
 
     function alertDesc(a) {
+        if (isFlowAlertType(a.alert_type)) return t('flowProblemMessage', 'Abnormal load-cell weight trend detected. Please check the IV line and patient.');
         const s = normStatus(a.alert_type);
         if (s === 'Critical') return t('criticalMessage', 'IV level is critical. Immediate action required.');
         if (s === 'Low') return t('lowMessage', 'IV level is low. Please monitor.');
         return t('stableMessage', 'All monitored IV bags are within safe range.');
     }
 
-    function alertIcon(status) {
-        if (status === 'Critical') return 'bi-exclamation-triangle-fill';
-        if (status === 'Low') return 'bi-clock';
+    function alertIcon(statusOrType) {
+        if (isFlowAlertType(statusOrType)) return 'bi-activity';
+        if (statusOrType === 'Critical') return 'bi-exclamation-triangle-fill';
+        if (statusOrType === 'Low') return 'bi-clock';
         return 'bi-check-circle';
     }
 
-    function alertClass(status) {
-        if (status === 'Critical') return 'danger';
-        if (status === 'Low') return 'warning';
+    function alertClass(statusOrType) {
+        if (isFlowAlertType(statusOrType)) return flowSeverity(statusOrType) === 'Critical' ? 'danger' : 'warning';
+        if (statusOrType === 'Critical') return 'danger';
+        if (statusOrType === 'Low') return 'warning';
         return 'success';
     }
 
     function alertItemHTML(a, index, full) {
-        const s = normStatus(a.alert_type);
+        const s = isFlowAlertType(a.alert_type) ? a.alert_type : normStatus(a.alert_type);
         const ack = a.acknowledged ? `<span class="ack-pill">${t('acknowledged', 'Acknowledged')}</span>` : '';
         const item = `<button type="button" class="notification-item ${alertClass(s)}" data-alert-index="${index}"><i class="bi ${alertIcon(s)}"></i><div><span>${a.created_at_full || a.created_at || ''}</span><strong>${alertTitle(a)}</strong><small>${a.message || alertDesc(a)}</small><em>${alertDesc(a)}</em>${ack}</div><i class="bi bi-chevron-right"></i></button>`;
         if (!full) return item;
@@ -621,7 +788,7 @@
         box.innerHTML = `
             <h3>${t('notificationDetails', 'Notification Details')}</h3>
             <div class="detail-row"><span>${t('patient', 'Patient')}</span><strong>${displayPatientName(alert.patient_name, alert.patient_id)}</strong></div>
-            <div class="detail-row"><span>${t('alertType', 'Alert Type')}</span><strong>${statusLabel(s)}</strong></div>
+            <div class="detail-row"><span>${t('alertType', 'Alert Type')}</span><strong>${isFlowAlertType(alert.alert_type) ? flowStatusLabel(alert.alert_type) : statusLabel(s)}</strong></div>
             <div class="detail-row"><span>${t('ivLevel', 'IV Level')}</span><strong>${Math.round(Number(alert.level_percent || 0))}%</strong></div>
             <div class="detail-row"><span>${t('alertTime', 'Alert Time')}</span><strong>${alert.created_at_full || alert.created_at || '-'}</strong></div>
             <div class="detail-row full"><span>${t('message', 'Message')}</span><p>${alert.message || alertDesc(alert)}</p></div>
@@ -638,6 +805,7 @@
         const a = document.getElementById('alertPageList');
         if (a) a.innerHTML = full;
         window.__ALERTS__ = alerts;
+        alerts.slice(0, 3).forEach(handleAlertNotification);
         if (Number.isInteger(window.__ACTIVE_ALERT_INDEX__) && alerts[window.__ACTIVE_ALERT_INDEX__]) {
             renderAlertDetail(alerts[window.__ACTIVE_ALERT_INDEX__]);
             document.querySelectorAll('[data-alert-index]').forEach(el => el.classList.toggle('active', Number(el.dataset.alertIndex) === window.__ACTIVE_ALERT_INDEX__));
@@ -658,7 +826,7 @@
         data.patients.forEach(p => {
             try { updatePatient(p); } catch (err) { console.error('Patient update failed', p && p.id, err); }
         });
-        try { createDropComparison(data); } catch (err) { console.error('Drop comparison failed', err); }
+        try { createFlowComparison(data); } catch (err) { console.error('Flow comparison failed', err); }
         try { createQuarterAnalysis(data); } catch (err) { console.error('Quarter analysis failed', err); }
         try { renderNotifications(data); } catch (err) { console.error('Notifications failed', err); }
         try { updateSystem(data); } catch (err) { console.error('System update failed', err); }
@@ -819,13 +987,14 @@
         document.querySelectorAll('[data-action="refresh-dashboard"]').forEach(btn => btn.addEventListener('click', () => refresh(true)));
         document.querySelectorAll('[data-action="download-excel"]').forEach(link => link.addEventListener('click', e => downloadExcel(e, link)));
         document.querySelectorAll('[data-action="stop-empty-alarm"]').forEach(btn => btn.addEventListener('click', () => stopAlarmForPatient(btn.dataset.patientId)));
-        document.querySelectorAll('[data-action="save-settings"]').forEach(btn => btn.addEventListener('click', () => { savePreferences(); toast(t('preferencesSavedBrowser', 'Notification preferences saved on this browser.')); }));
+        document.querySelectorAll('[data-action="save-settings"]').forEach(btn => btn.addEventListener('click', () => { savePreferences(); requestBrowserNotificationPermission(true); toast(t('preferencesSavedBrowser', 'Notification preferences saved on this browser.')); }));
         document.querySelectorAll('[data-action="reset-settings"]').forEach(btn => btn.addEventListener('click', () => { localStorage.removeItem('ivNotificationPreferences'); document.querySelectorAll('[data-toggle-pref] .toggle').forEach((t,i) => t.classList.toggle('on', i !== 3)); toast(t('resetDone', 'Settings restored on this screen.')); }));
         document.querySelectorAll('[data-demo-button]').forEach(btn => btn.addEventListener('click', () => toast(t('demoButtonNote', 'This button is active for dashboard demonstration.'))));
         document.querySelectorAll('[data-toggle-pref]').forEach(btn => btn.addEventListener('click', () => {
             const toggle = btn.querySelector('.toggle');
             if (toggle) toggle.classList.toggle('on');
             savePreferences();
+            if (btn.textContent && btn.textContent.toLowerCase().includes('notification')) requestBrowserNotificationPermission(true);
             toast(t('toggleUpdated', 'Preference updated.'));
         }));
         setupAddUser();

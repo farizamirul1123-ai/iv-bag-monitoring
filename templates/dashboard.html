@@ -64,9 +64,9 @@
                                         <em data-patient-remaining-weight="{{ patient.id }}">{{ patient.current_weight_g|round(0) }} ml</em>
                                     </div>
                                     <div class="vital-list">
-                                        <div><i class="bi bi-droplet"></i><span data-i18n="dripRate">Drip Rate</span><strong><span data-patient-drop="{{ patient.id }}">{{ patient.current_drop_rate|round(0) }}</span> <small data-i18n="dropsPerMin">drops/min</small></strong></div>
-                                        <div class="quarter-notification-box"><i class="bi bi-bell-fill"></i><span data-i18n="quarterNotification">Quarter Notification</span><strong><span data-patient-quarter="{{ patient.id }}">--/4</span> <small data-patient-notification="{{ patient.id }}">--</small></strong></div>
-                                        <div><i class="bi bi-water"></i><span data-i18n="flowRate">Flow Rate</span><strong><span data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr|round(0) }}</span> <small data-i18n="mlHr">ml/hr</small></strong></div>
+                                        <div class="flow-status-box"><i class="bi bi-activity"></i><span data-i18n="loadCellFlow">Flow Status</span><strong class="status-pill status-normal" data-patient-flow-status="{{ patient.id }}">Normal Flow</strong></div>
+                                        <div class="quarter-notification-box"><i class="bi bi-bell-fill"></i><span data-i18n="quarterNotification">Quarter Alert</span><strong><span data-patient-quarter="{{ patient.id }}">--/4</span> <small data-patient-notification="{{ patient.id }}">--</small></strong></div>
+                                        <div><i class="bi bi-water"></i><span data-i18n="weightFlowRate">Weight Rate</span><strong><span data-patient-flow="{{ patient.id }}">{{ patient.current_flow_rate_ml_hr|round(0) }}</span> <small data-i18n="mlHr">ml/hr</small></strong></div>
                                         <div><span data-i18n="status">Status</span><strong class="status-pill status-normal" data-patient-status="{{ patient.id }}">{{ patient.current_status }}</strong></div>
                                     </div>
                                 </div>
@@ -92,8 +92,8 @@
                         </div>
 
                         <article class="chart-card wide-chart">
-                            <div class="chart-title"><strong data-i18n="dropComparison">Drop Rate Comparison</strong><select aria-label="time range"><option data-i18n="last60Minutes">Last 60 minutes</option></select></div>
-                            <canvas id="dropComparisonChart"></canvas>
+                            <div class="chart-title"><strong data-i18n="flowRateComparison">Weight Comparison</strong><select aria-label="time range"><option data-i18n="last60Minutes">Last 60 minutes</option></select></div>
+                            <canvas id="flowComparisonChart"></canvas>
                         </article>
                     </div>
 
@@ -134,9 +134,9 @@
                         <div class="metric-level"><i class="bi bi-droplet"></i><span data-i18n="ivLevel">IV Level</span><strong data-patient-level="{{ patient.id }}">--%</strong><div class="progress-bar"><b data-patient-progress="{{ patient.id }}"></b></div></div>
                         <div class="metric-box"><i class="bi bi-water"></i><span data-i18n="remainingVolume">Remaining Volume</span><strong data-patient-remaining-weight="{{ patient.id }}">-- ml</strong></div>
                         <div class="metric-box"><i class="bi bi-prescription2"></i><span data-i18n="totalWeight">Total Weight</span><strong data-patient-current-weight="{{ patient.id }}">-- g</strong></div>
-                        <div class="metric-box"><i class="bi bi-droplet"></i><span data-i18n="dripRate">Drip Rate</span><strong><span data-patient-drop="{{ patient.id }}">--</span> <small data-i18n="dropsPerMin">drops/min</small></strong></div>
-                        <div class="metric-box"><i class="bi bi-water"></i><span data-i18n="flowRate">Flow Rate</span><strong><span data-patient-flow="{{ patient.id }}">--</span> <small data-i18n="mlHr">ml/hr</small></strong></div>
-                        <div class="metric-box quarter-notification-box"><i class="bi bi-bell-fill"></i><span data-i18n="quarterNotification">Quarter Notification</span><strong><span data-patient-quarter="{{ patient.id }}">--/4</span> <small data-patient-notification="{{ patient.id }}">--</small></strong></div>
+                        <div class="metric-box flow-status-box"><i class="bi bi-activity"></i><span data-i18n="loadCellFlow">Flow Status</span><strong class="status-pill status-normal" data-patient-flow-status="{{ patient.id }}">Normal Flow</strong></div>
+                        <div class="metric-box"><i class="bi bi-water"></i><span data-i18n="weightFlowRate">Weight Rate</span><strong><span data-patient-flow="{{ patient.id }}">--</span> <small data-i18n="mlHr">ml/hr</small></strong></div>
+                        <div class="metric-box quarter-notification-box"><i class="bi bi-bell-fill"></i><span data-i18n="quarterNotification">Quarter Alert</span><strong><span data-patient-quarter="{{ patient.id }}">--/4</span> <small data-patient-notification="{{ patient.id }}">--</small></strong></div>
                         <div class="metric-box"><i class="bi bi-activity"></i><span data-i18n="status">Status</span><strong class="status-pill status-normal" data-patient-status="{{ patient.id }}">Normal</strong></div>
                     </div>
                     <div class="alarm-control-row monitor-alarm-row">
@@ -148,8 +148,8 @@
                     </div>
                     <div class="monitor-detail-grid">
                         <div class="chart-card compact-chart"><div class="chart-title"><strong data-i18n="weightTrend">Weight vs Time</strong><em data-i18n="weightMl">Volume (ml)</em></div><canvas id="monitorWeightChart{{ patient.id }}"></canvas></div>
-                        <div class="chart-card compact-chart"><div class="chart-title"><strong data-i18n="dropTrend">Drop Rate Trend</strong><em data-i18n="dropsPerMin">Drops/min</em></div><canvas id="monitorDropChart{{ patient.id }}"></canvas></div>
-                        <div class="log-card"><h4><i class="bi bi-display"></i> <span data-i18n="liveDataLog">Live Data Log</span> <small data-i18n="latestReadings">Latest Readings</small></h4><table><thead><tr><th data-i18n="time">Time</th><th data-i18n="weightG">Weight (g)</th><th data-i18n="dripRate">Drip Rate</th><th data-i18n="flowRate">Flow Rate</th><th data-i18n="ivLevel">IV Level</th><th data-i18n="quarterNotification">Quarter</th></tr></thead><tbody id="liveLog{{ patient.id }}"></tbody></table></div>
+                        <div class="chart-card compact-chart"><div class="chart-title"><strong data-i18n="flowTrend">Weight Flow Trend</strong><em data-i18n="mlHr">ml/hr</em></div><canvas id="monitorFlowChart{{ patient.id }}"></canvas></div>
+                        <div class="log-card"><h4><i class="bi bi-display"></i> <span data-i18n="liveDataLog">Live Data Log</span> <small data-i18n="latestReadings">Latest Readings</small></h4><table><thead><tr><th data-i18n="time">Time</th><th data-i18n="weightG">Weight (g)</th><th data-i18n="weightFlowRate">Flow Rate</th><th data-i18n="flowStatus">Flow Status</th><th data-i18n="ivLevel">IV Level</th><th data-i18n="quarterNotification">Quarter</th></tr></thead><tbody id="liveLog{{ patient.id }}"></tbody></table></div>
                     </div>
                 </article>
                 {% endfor %}
@@ -157,7 +157,7 @@
 
             <section class="app-section" data-section="patients">
                 <div class="page-heading"><h1 data-i18n="patientsPageTitle">Patients</h1><p data-i18n="patientsPageDesc">Patient details, current IV level, bed, ward and latest condition.</p></div>
-                <article class="simple-card"><table class="patient-table"><thead><tr><th data-i18n="patient">Patient</th><th data-i18n="patientId">Patient ID</th><th data-i18n="ward">Ward</th><th data-i18n="bed">Bed</th><th data-i18n="ivLevel">IV Level</th><th data-i18n="currentWeight">Current Weight</th><th data-i18n="dripRate">Drip Rate</th><th data-i18n="flowRate">Flow Rate</th><th data-i18n="status">Status</th></tr></thead><tbody>{% for patient in patients %}<tr><td><strong data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</strong></td><td data-patient-code="{{ patient.id }}">PT{{ '%03d'|format(patient.id) }}</td><td data-patient-ward="{{ patient.id }}">{{ patient.ward_number }}</td><td data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</td><td data-patient-level="{{ patient.id }}">--%</td><td data-patient-current-weight="{{ patient.id }}">-- g</td><td><span data-patient-drop="{{ patient.id }}">--</span> <span data-i18n="dropsPerMin">drops/min</span></td><td><span data-patient-flow="{{ patient.id }}">--</span> <span data-i18n="mlHr">ml/hr</span></td><td><span class="status-pill status-normal" data-patient-status="{{ patient.id }}">Normal</span></td></tr>{% endfor %}</tbody></table></article>
+                <article class="simple-card"><table class="patient-table"><thead><tr><th data-i18n="patient">Patient</th><th data-i18n="patientId">Patient ID</th><th data-i18n="ward">Ward</th><th data-i18n="bed">Bed</th><th data-i18n="ivLevel">IV Level</th><th data-i18n="currentWeight">Current Weight</th><th data-i18n="weightFlowRate">Flow Rate</th><th data-i18n="flowStatus">Flow Status</th><th data-i18n="status">Level Status</th></tr></thead><tbody>{% for patient in patients %}<tr><td><strong data-patient-name="{{ patient.id }}">{{ patient.patient_name }}</strong></td><td data-patient-code="{{ patient.id }}">PT{{ '%03d'|format(patient.id) }}</td><td data-patient-ward="{{ patient.id }}">{{ patient.ward_number }}</td><td data-patient-bed="{{ patient.id }}">{{ patient.bed_number }}</td><td data-patient-level="{{ patient.id }}">--%</td><td data-patient-current-weight="{{ patient.id }}">-- g</td><td><span data-patient-flow="{{ patient.id }}">--</span> <span data-i18n="mlHr">ml/hr</span></td><td><span class="status-pill status-normal" data-patient-flow-status="{{ patient.id }}">Normal Flow</span></td><td><span class="status-pill status-normal" data-patient-status="{{ patient.id }}">Normal</span></td></tr>{% endfor %}</tbody></table></article>
 
                 <div class="patient-settings-grid">
                     {% for patient in patients %}
@@ -174,7 +174,6 @@
                         <form method="post" action="{{ url_for('manual_reading', patient_id=patient.id) }}" class="manual-reading-form">
                             <strong data-i18n="manualTestReading">Manual Test Reading</strong>
                             <label><span data-i18n="weightInput">Weight Reading (g)</span><input type="number" step="0.1" name="weight_g" required></label>
-                            <label><span data-i18n="dropInput">Drop Rate (drops/min)</span><input type="number" step="0.1" name="drops_per_min" required></label>
                             <button type="submit" data-i18n="submitReading">Submit Reading</button>
                         </form>
                     </article>

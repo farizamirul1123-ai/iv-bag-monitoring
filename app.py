@@ -32,9 +32,20 @@ db = SQLAlchemy(app)
 MONITOR_OPTIONS = ["Fariz Amirul", "Hareny", "Madam Ku Lee Chin"]
 DEFAULT_API_KEY = os.getenv("API_KEY", "IVMONITOR123")
 TIMEZONE_OFFSET_HOURS = int(os.getenv("TIMEZONE_OFFSET_HOURS", "8"))  # Render runs in UTC; Malaysia time = UTC+8.
-DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # 20 drops/ml is a common macrodrip set.
+DROP_FACTOR = float(os.getenv("DROP_FACTOR", "20"))  # Kept only for old database compatibility.
 IV_CAPACITY_ML = float(os.getenv("IV_CAPACITY_ML", "500"))  # 500 ml IV bag, 1 ml ~= 1 g for this project.
 QUARTER_VOLUME_ML = IV_CAPACITY_ML / 4.0
+
+# Load-cell-only flow analysis thresholds. The dashboard no longer depends on a drop sensor.
+EMPTY_ALARM_THRESHOLD_ML = float(os.getenv("EMPTY_ALARM_THRESHOLD_ML", "50"))
+FLOW_LOOKBACK_READINGS = int(os.getenv("FLOW_LOOKBACK_READINGS", "12"))
+FLOW_MIN_WINDOW_SECONDS = float(os.getenv("FLOW_MIN_WINDOW_SECONDS", "45"))
+FLOW_STALL_TOLERANCE_G = float(os.getenv("FLOW_STALL_TOLERANCE_G", "1.5"))
+FLOW_SLOW_MIN_ML_HR = float(os.getenv("FLOW_SLOW_MIN_ML_HR", "20"))
+FLOW_FAST_MAX_ML_HR = float(os.getenv("FLOW_FAST_MAX_ML_HR", "250"))
+FLOW_SUDDEN_DROP_G = float(os.getenv("FLOW_SUDDEN_DROP_G", "60"))
+FLOW_INCREASE_TOLERANCE_G = float(os.getenv("FLOW_INCREASE_TOLERANCE_G", "5"))
+FLOW_NEW_BAG_INCREASE_G = float(os.getenv("FLOW_NEW_BAG_INCREASE_G", "80"))
 
 
 class MonitorLog(db.Model):
@@ -54,7 +65,7 @@ class PatientSlot(db.Model):
     current_level_percent = db.Column(db.Float, nullable=False, default=100.0)
     current_drop_rate = db.Column(db.Float, nullable=True, default=0.0)
     current_flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
-    current_drip_status = db.Column(db.String(30), nullable=True, default="Normal")
+    current_drip_status = db.Column(db.String(30), nullable=True, default="Normal Flow")
     current_status = db.Column(db.String(20), nullable=False, default="Normal")
     last_update_time = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
@@ -68,7 +79,7 @@ class Reading(db.Model):
     drop_count = db.Column(db.Integer, nullable=True, default=0)
     drops_per_min = db.Column(db.Float, nullable=True, default=0.0)
     flow_rate_ml_hr = db.Column(db.Float, nullable=True, default=0.0)
-    drip_status = db.Column(db.String(30), nullable=True, default="Normal")
+    drip_status = db.Column(db.String(30), nullable=True, default="Normal Flow")
     source = db.Column(db.String(30), nullable=False, default="system")
     created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
 
@@ -166,17 +177,133 @@ def get_status(level_percent):
     return "Normal"
 
 
+def normalize_flow_status(value):
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "normal": "Normal Flow",
+        "normal flow": "Normal Flow",
+        "stable": "Normal Flow",
+        "no drip": "No Flow",
+        "no flow": "No Flow",
+        "slow": "Slow Flow",
+        "slow flow": "Slow Flow",
+        "fast": "Fast Flow",
+        "fast flow": "Fast Flow",
+        "sudden drop": "Sudden Drop",
+        "unstable": "Unstable Weight",
+        "unstable weight": "Unstable Weight",
+        "new bag": "New Bag Detected",
+        "new bag detected": "New Bag Detected",
+        "bag empty": "Bag Empty",
+        "stabilizing": "Stabilizing",
+        "monitoring": "Stabilizing",
+    }
+    return aliases.get(raw, value if value else "Normal Flow")
+
+
 def calculate_flow_rate(drops_per_min):
+    # Legacy helper kept so old rows/routes do not break. New flow rate is calculated from load-cell weight trend.
     try:
         return round((float(drops_per_min) * 60.0) / max(DROP_FACTOR, 1.0), 2)
     except (TypeError, ValueError):
         return 0.0
 
 
+def analyze_load_cell_flow(patient, current_weight, now=None):
+    """Estimate IV flow condition from load-cell weight trend only.
+
+    The system cannot directly prove an upstream/downstream occlusion without a flow sensor.
+    It infers early-warning conditions from the weight pattern: weight not decreasing,
+    decreasing too slowly, decreasing too quickly, or jumping unexpectedly.
+    """
+    now = normalize_dt(now or utcnow())
+    current = clamp_volume_ml(current_weight)
+    readings = (
+        Reading.query.filter_by(patient_id=patient.id)
+        .order_by(Reading.created_at.desc())
+        .limit(FLOW_LOOKBACK_READINGS)
+        .all()
+    )
+
+    if current <= EMPTY_ALARM_THRESHOLD_ML:
+        return 0.0, "Bag Empty", "IV bag is empty or almost empty."
+
+    if not readings:
+        return 0.0, "Stabilizing", "Waiting for enough load-cell trend data."
+
+    latest = readings[0]
+    latest_time = normalize_dt(latest.created_at)
+    latest_weight = clamp_volume_ml(latest.weight_g)
+    recent_delta = latest_weight - current
+
+    if current - latest_weight >= FLOW_NEW_BAG_INCREASE_G:
+        return 0.0, "New Bag Detected", "New IV bag or refilled bag detected."
+
+    if current - latest_weight > FLOW_INCREASE_TOLERANCE_G:
+        return 0.0, "Unstable Weight", "Load-cell reading increased unexpectedly. Check bag position and sensor stability."
+
+    if recent_delta >= FLOW_SUDDEN_DROP_G:
+        return 999.0, "Sudden Drop", "IV weight dropped suddenly. Check the IV line and patient immediately."
+
+    # Use the oldest available reading to smooth short-term HX711 noise.
+    oldest = readings[-1]
+    oldest_time = normalize_dt(oldest.created_at)
+    oldest_weight = clamp_volume_ml(oldest.weight_g)
+
+    elapsed_seconds = max((now - oldest_time).total_seconds(), 0.0) if oldest_time else 0.0
+    if elapsed_seconds < FLOW_MIN_WINDOW_SECONDS:
+        # If the trend window is too short, still calculate but do not issue a flow warning yet.
+        latest_elapsed = max((now - latest_time).total_seconds(), 0.0) if latest_time else 0.0
+        if latest_elapsed > 0:
+            quick_rate = max(0.0, latest_weight - current) / (latest_elapsed / 3600.0)
+            return round(quick_rate, 2), "Stabilizing", "Collecting more load-cell readings before issuing flow warning."
+        return 0.0, "Stabilizing", "Collecting more load-cell readings before issuing flow warning."
+
+    weight_drop = max(0.0, oldest_weight - current)
+    hours = max(elapsed_seconds / 3600.0, 0.0001)
+    flow_rate_ml_hr = round(weight_drop / hours, 2)
+
+    if abs(oldest_weight - current) <= FLOW_STALL_TOLERANCE_G:
+        return flow_rate_ml_hr, "No Flow", "IV weight is not decreasing. Possible blockage, clamp closed, or line not flowing."
+
+    if flow_rate_ml_hr < FLOW_SLOW_MIN_ML_HR:
+        return flow_rate_ml_hr, "Slow Flow", "IV weight is decreasing too slowly. Please check the line and roller clamp."
+
+    if flow_rate_ml_hr > FLOW_FAST_MAX_ML_HR:
+        return flow_rate_ml_hr, "Fast Flow", "IV weight is decreasing too quickly. Please check the flow setting."
+
+    return flow_rate_ml_hr, "Normal Flow", "Load-cell weight trend is within the expected range."
+
+
+def create_timed_alert(patient, alert_type, message, cooldown_minutes=5):
+    latest_similar = (
+        Alert.query.filter_by(patient_id=patient.id, alert_type=alert_type)
+        .order_by(desc(Alert.created_at))
+        .first()
+    )
+
+    now = utcnow()
+    if latest_similar:
+        latest_created = normalize_dt(latest_similar.created_at)
+        now_naive = normalize_dt(now)
+        if latest_created and (now_naive - latest_created).total_seconds() < cooldown_minutes * 60:
+            return
+
+    db.session.add(
+        Alert(
+            patient_id=patient.id,
+            level_percent=patient.current_level_percent,
+            alert_type=alert_type[:20],
+            message=message[:255],
+            created_at=now,
+        )
+    )
+
+
 def ensure_schema_upgrades():
     """Small safe migration helper for old SQLite/PostgreSQL deployments.
     create_all() does not add new columns to an existing table, so this keeps
-    old Render databases compatible with the new drop-rate dashboard.
+    old Render databases compatible with the load-cell-only dashboard.
     """
     inspector = inspect(db.engine)
     tables = set(inspector.get_table_names())
@@ -191,13 +318,13 @@ def ensure_schema_upgrades():
             "ward_number": "VARCHAR(50) DEFAULT 'Ward 3A'",
             "current_drop_rate": "FLOAT DEFAULT 0",
             "current_flow_rate_ml_hr": "FLOAT DEFAULT 0",
-            "current_drip_status": "VARCHAR(30) DEFAULT 'Normal'",
+            "current_drip_status": "VARCHAR(30) DEFAULT 'Normal Flow'",
         },
         "reading": {
             "drop_count": "INTEGER DEFAULT 0",
             "drops_per_min": "FLOAT DEFAULT 0",
             "flow_rate_ml_hr": "FLOAT DEFAULT 0",
-            "drip_status": "VARCHAR(30) DEFAULT 'Normal'",
+            "drip_status": "VARCHAR(30) DEFAULT 'Normal Flow'",
         },
     }
 
@@ -230,7 +357,7 @@ def seed_database():
                 current_level_percent=100.0,
                 current_drop_rate=0.0,
                 current_flow_rate_ml_hr=0.0,
-                current_drip_status="Normal",
+                current_drip_status="Normal Flow",
                 current_status="Normal",
                 last_update_time=utcnow(),
             )
@@ -261,7 +388,9 @@ def seed_database():
         if patient.current_flow_rate_ml_hr is None:
             patient.current_flow_rate_ml_hr = 0.0
         if not patient.current_drip_status:
-            patient.current_drip_status = "Normal"
+            patient.current_drip_status = "Normal Flow"
+        else:
+            patient.current_drip_status = normalize_flow_status(patient.current_drip_status)
 
         if Reading.query.filter_by(patient_id=patient.id).count() == 0:
             # Demo history gives the dashboard visible moving graphs on first launch.
@@ -277,18 +406,23 @@ def seed_database():
             for n, (weight, drop_rate) in enumerate(zip(weights, drops)):
                 level = calculate_level(weight, patient.empty_weight_g, patient.full_weight_g)
                 status = get_status(level)
-                flow = calculate_flow_rate(drop_rate)
-                drip_status = get_drip_status(drop_rate)
+                # Demo flow is estimated from the weight trend only. Drop fields are kept at 0 for old schemas.
+                if n == 0:
+                    flow = 0.0
+                else:
+                    prev_weight = weights[n - 1]
+                    flow = round(max(0.0, prev_weight - weight) / 0.1, 2)  # each demo point = 6 min = 0.1 hr
+                drip_status = "Normal Flow"
                 db.session.add(
                     Reading(
                         patient_id=patient.id,
                         weight_g=weight,
                         level_percent=level,
                         status=status,
-                        drops_per_min=drop_rate,
+                        drops_per_min=0.0,
                         flow_rate_ml_hr=flow,
                         drip_status=drip_status,
-                        drop_count=n * int(max(drop_rate, 1)),
+                        drop_count=0,
                         source="demo",
                         created_at=base_now + timedelta(minutes=n * 6),
                     )
@@ -296,9 +430,9 @@ def seed_database():
             patient.current_weight_g = clamp_volume_ml(weights[-1])
             patient.current_level_percent = calculate_level(patient.current_weight_g, patient.empty_weight_g, patient.full_weight_g)
             patient.current_status = get_status(patient.current_level_percent)
-            patient.current_drop_rate = drops[-1]
-            patient.current_flow_rate_ml_hr = calculate_flow_rate(drops[-1])
-            patient.current_drip_status = get_drip_status(drops[-1])
+            patient.current_drop_rate = 0.0
+            patient.current_flow_rate_ml_hr = round(max(0.0, weights[-2] - weights[-1]) / 0.1, 2) if len(weights) > 1 else 0.0
+            patient.current_drip_status = "Normal Flow"
             patient.last_update_time = base_now + timedelta(minutes=(len(weights) - 1) * 6)
             create_alert_if_needed(patient)
     db.session.commit()
@@ -309,34 +443,20 @@ def create_alert_if_needed(patient):
     if patient.current_status not in ["Low", "Critical"]:
         return
 
-    cutoff_minutes = 5
-    latest_similar = (
-        Alert.query.filter_by(patient_id=patient.id, alert_type=patient.current_status)
-        .order_by(desc(Alert.created_at))
-        .first()
-    )
-
-    now = utcnow()
-    if latest_similar:
-        latest_created = normalize_dt(latest_similar.created_at)
-        now_naive = normalize_dt(now)
-        if latest_created and (now_naive - latest_created).total_seconds() < cutoff_minutes * 60:
-            return
-
     msg = (
         f"{patient.patient_name} IV level is {patient.current_status.lower()} "
         f"at {patient.current_level_percent:.1f}%. Please monitor."
     )
+    create_timed_alert(patient, patient.current_status, msg)
 
-    db.session.add(
-        Alert(
-            patient_id=patient.id,
-            level_percent=patient.current_level_percent,
-            alert_type=patient.current_status,
-            message=msg,
-            created_at=now,
-        )
-    )
+
+def create_flow_alert_if_needed(patient, flow_status, flow_message):
+    flow_status = normalize_flow_status(flow_status)
+    safe_statuses = {"Normal Flow", "Stabilizing", "New Bag Detected", "Bag Empty"}
+    if flow_status in safe_statuses:
+        return
+    msg = f"{patient.patient_name}: {flow_message}"
+    create_timed_alert(patient, flow_status, msg)
 
 
 @app.before_request
@@ -442,12 +562,11 @@ def manual_reading(patient_id):
 
     try:
         weight_g = float(request.form.get("weight_g"))
-        drops_per_min = float(request.form.get("drops_per_min") or 0)
     except (TypeError, ValueError):
         flash("Invalid reading value.")
         return redirect(url_for("dashboard"))
 
-    save_reading(patient, weight_g, drops_per_min=drops_per_min, source="manual")
+    save_reading(patient, weight_g, source="manual")
     return redirect(url_for("dashboard"))
 
 
@@ -486,12 +605,8 @@ def api_update():
             "hx711_weight_g",
         )
         weight_g = float(weight_raw)
-        drops_per_min = float(first_payload_value(payload, "drops_per_min", "drop_rate", "drip_rate", default=0) or 0)
-        drop_count = int(float(first_payload_value(payload, "drop_count", "total_drops", default=0) or 0))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "patient_id and weight_g/weight are required"}), 400
-
-    drip_status = payload.get("drip_status") or get_drip_status(drops_per_min)
 
     patient = PatientSlot.query.get(patient_id)
     if not patient or patient.id not in [p.id for p in PatientSlot.query.order_by(PatientSlot.id).limit(2).all()]:
@@ -500,9 +615,6 @@ def api_update():
     save_reading(
         patient,
         weight_g,
-        drops_per_min=drops_per_min,
-        drop_count=drop_count,
-        drip_status=drip_status,
         source="esp32",
     )
 
@@ -519,9 +631,8 @@ def api_update():
             "quarter_label": quarter_label(patient.current_weight_g),
             "notification_blinks": volume_quarter(patient.current_weight_g),
             "status": patient.current_status,
-            "drops_per_min": patient.current_drop_rate,
             "flow_rate_ml_hr": patient.current_flow_rate_ml_hr,
-            "drip_status": patient.current_drip_status,
+            "flow_status": normalize_flow_status(patient.current_drip_status),
             "last_update_time": normalize_dt(patient.last_update_time).isoformat(),
         }
     )
@@ -588,9 +699,10 @@ def patient_payload(patient, readings=None):
         "notification_text": quarter_notification_text(remaining_weight),
         "current_level_percent": round(max(patient.current_level_percent or 0, 0), 2),
         "current_status": patient.current_status or "Normal",
-        "current_drop_rate": round(patient.current_drop_rate or 0, 2),
+        "current_drop_rate": 0,
         "current_flow_rate_ml_hr": round(patient.current_flow_rate_ml_hr or 0, 2),
-        "current_drip_status": patient.current_drip_status or "Normal",
+        "current_flow_status": normalize_flow_status(patient.current_drip_status),
+        "current_drip_status": normalize_flow_status(patient.current_drip_status),
         "last_update_time": format_time(patient.last_update_time),
         "last_update_full": format_dt(patient.last_update_time, "%d/%m/%Y, %I:%M:%S %p"),
         "full_weight_g": round(full_weight, 2),
@@ -606,9 +718,10 @@ def patient_payload(patient, readings=None):
                 "notification_blinks": volume_quarter(r.weight_g),
                 "level_percent": round(max(r.level_percent or 0, 0), 2),
                 "status": r.status or "Normal",
-                "drops_per_min": round(max(r.drops_per_min or 0, 0), 2),
+                "drops_per_min": 0,
                 "flow_rate_ml_hr": round(max(r.flow_rate_ml_hr or 0, 0), 2),
-                "drip_status": r.drip_status or "Normal",
+                "flow_status": normalize_flow_status(r.drip_status),
+                "drip_status": normalize_flow_status(r.drip_status),
                 "source": r.source or "system",
             }
             for r in readings
@@ -645,13 +758,26 @@ def build_dashboard_payload():
             }
             for a in alerts
         ],
+        "flow_comparison": {
+            "labels": chart_labels,
+            "series": [
+                {
+                    "patient_id": item["id"],
+                    "patient_name": item["patient_name"],
+                    "rates": [r["flow_rate_ml_hr"] for r in item["readings"]],
+                    "statuses": [r["flow_status"] for r in item["readings"]],
+                }
+                for item in patient_items
+            ],
+        },
+        # Backward-compatible alias. It now carries load-cell estimated flow rate, not drop-sensor data.
         "drop_comparison": {
             "labels": chart_labels,
             "series": [
                 {
                     "patient_id": item["id"],
                     "patient_name": item["patient_name"],
-                    "drops": [r["drops_per_min"] for r in item["readings"]],
+                    "drops": [r["flow_rate_ml_hr"] for r in item["readings"]],
                 }
                 for item in patient_items
             ],
@@ -695,9 +821,8 @@ def export_excel():
             "Notification Blink/Sound Quantity": volume_quarter(p.current_weight_g),
             "IV Level (%)": p.current_level_percent,
             "IV Status": p.current_status,
-            "Drop Rate (drops/min)": p.current_drop_rate,
-            "Flow Rate (ml/hr)": p.current_flow_rate_ml_hr,
-            "Drip Status": p.current_drip_status,
+            "Load-Cell Flow Rate (ml/hr)": p.current_flow_rate_ml_hr,
+            "Load-Cell Flow Status": normalize_flow_status(p.current_drip_status),
             "Last Update Time": format_dt(p.last_update_time),
             "Full Weight (g)": IV_CAPACITY_ML,
             "Empty Weight (g)": 0.0,
@@ -715,10 +840,8 @@ def export_excel():
             "Notification Blink/Sound Quantity": volume_quarter(r.weight_g),
             "Level (%)": r.level_percent,
             "IV Status": r.status,
-            "Drop Count": r.drop_count,
-            "Drop Rate (drops/min)": r.drops_per_min,
-            "Flow Rate (ml/hr)": r.flow_rate_ml_hr,
-            "Drip Status": r.drip_status,
+            "Load-Cell Flow Rate (ml/hr)": r.flow_rate_ml_hr,
+            "Load-Cell Flow Status": normalize_flow_status(r.drip_status),
             "Source": r.source,
             "Created At": format_dt(r.created_at),
         }
@@ -787,21 +910,20 @@ def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system")
 
 def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status=None, source="system"):
     now = utcnow()
-    drops_per_min = round(float(drops_per_min or 0), 2)
     patient.full_weight_g = IV_CAPACITY_ML
     patient.empty_weight_g = 0.0
-    weight_g = clean_incoming_weight(patient, weight_g, drops_per_min=drops_per_min, source=source)
+    weight_g = clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source=source)
     level = calculate_level(weight_g, patient.empty_weight_g, patient.full_weight_g)
     status = get_status(level)
-    flow_rate_ml_hr = calculate_flow_rate(drops_per_min)
-    drip_status = drip_status or get_drip_status(drops_per_min)
+    flow_rate_ml_hr, flow_status, flow_message = analyze_load_cell_flow(patient, weight_g, now=now)
+    flow_status = normalize_flow_status(flow_status)
 
     patient.current_weight_g = round(weight_g, 2)
     patient.current_level_percent = level
     patient.current_status = status
-    patient.current_drop_rate = drops_per_min
+    patient.current_drop_rate = 0.0
     patient.current_flow_rate_ml_hr = flow_rate_ml_hr
-    patient.current_drip_status = drip_status
+    patient.current_drip_status = flow_status
     patient.last_update_time = now
 
     db.session.add(
@@ -810,16 +932,17 @@ def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status
             weight_g=round(weight_g, 2),
             level_percent=level,
             status=status,
-            drop_count=drop_count,
-            drops_per_min=drops_per_min,
+            drop_count=0,
+            drops_per_min=0.0,
             flow_rate_ml_hr=flow_rate_ml_hr,
-            drip_status=drip_status,
+            drip_status=flow_status,
             source=source,
             created_at=now,
         )
     )
 
     create_alert_if_needed(patient)
+    create_flow_alert_if_needed(patient, flow_status, flow_message)
     db.session.commit()
 
 
