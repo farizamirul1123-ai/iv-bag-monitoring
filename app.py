@@ -195,10 +195,36 @@ def normalize_flow_status(value):
         "new bag": "New Bag Detected",
         "new bag detected": "New Bag Detected",
         "bag empty": "Bag Empty",
+        "blockage": "Blockage",
+        "blocked": "Blockage",
+        "possible blockage": "Blockage",
+        "occlusion": "Blockage",
+        "line blocked": "Blockage",
+        "clamp closed": "Blockage",
         "stabilizing": "Stabilizing",
         "monitoring": "Stabilizing",
     }
     return aliases.get(raw, value if value else "Normal Flow")
+
+
+def parse_bool(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def flow_message_for_status(flow_status):
+    status = normalize_flow_status(flow_status)
+    messages = {
+        "Blockage": "Possible blockage / clamp closed / no flow detected by ESP32.",
+        "No Flow": "IV weight is not decreasing. Possible blockage, clamp closed, or line not flowing.",
+        "Slow Flow": "IV weight is decreasing too slowly. Please check the line and roller clamp.",
+        "Fast Flow": "IV weight is decreasing too quickly. Please check the flow setting.",
+        "Sudden Drop": "IV weight dropped suddenly. Check the IV line and patient immediately.",
+        "Unstable Weight": "Load-cell reading increased unexpectedly. Check bag position and sensor stability.",
+        "Bag Empty": "IV bag is empty or almost empty.",
+        "New Bag Detected": "New IV bag or refilled bag detected.",
+        "Stabilizing": "Collecting more load-cell readings before issuing flow warning.",
+    }
+    return messages.get(status, "Load-cell weight trend is within the expected range.")
 
 
 def calculate_flow_rate(drops_per_min):
@@ -612,10 +638,69 @@ def api_update():
     if not patient or patient.id not in [p.id for p in PatientSlot.query.order_by(PatientSlot.id).limit(2).all()]:
         return jsonify({"success": False, "message": "Only Patient 1 and Patient 2 are active in this dashboard"}), 404
 
+    incoming_flow_status = first_payload_value(
+        payload,
+        "flow_status",
+        "current_flow_status",
+        "drip_status",
+        "current_drip_status",
+        default=None,
+    )
+
+    blockage_alert = parse_bool(
+        first_payload_value(
+            payload,
+            "blockage_alert",
+            "blockage",
+            "occlusion_alert",
+            "line_blocked",
+            default=False,
+        )
+    )
+
+    slow_flow_alert = parse_bool(
+        first_payload_value(
+            payload,
+            "slow_flow_alert",
+            "slow_flow",
+            "slow_flow_detected",
+            default=False,
+        )
+    )
+
+    if blockage_alert:
+        incoming_flow_status = "Blockage"
+    elif slow_flow_alert:
+        incoming_flow_status = "Slow Flow"
+
+    incoming_flow_rate_ml_hr = None
+    flow_rate_hr_raw = first_payload_value(
+        payload,
+        "flow_rate_ml_hr",
+        "current_flow_rate_ml_hr",
+        default=None,
+    )
+    flow_rate_min_raw = first_payload_value(
+        payload,
+        "flow_rate_ml_min",
+        "current_flow_rate_ml_min",
+        default=None,
+    )
+
+    try:
+        if flow_rate_hr_raw is not None:
+            incoming_flow_rate_ml_hr = float(flow_rate_hr_raw)
+        elif flow_rate_min_raw is not None:
+            incoming_flow_rate_ml_hr = float(flow_rate_min_raw) * 60.0
+    except (TypeError, ValueError):
+        incoming_flow_rate_ml_hr = None
+
     save_reading(
         patient,
         weight_g,
         source="esp32",
+        incoming_flow_status=incoming_flow_status,
+        incoming_flow_rate_ml_hr=incoming_flow_rate_ml_hr,
     )
 
     return jsonify(
@@ -633,6 +718,8 @@ def api_update():
             "status": patient.current_status,
             "flow_rate_ml_hr": patient.current_flow_rate_ml_hr,
             "flow_status": normalize_flow_status(patient.current_drip_status),
+            "blockage_alert": normalize_flow_status(patient.current_drip_status) == "Blockage",
+            "slow_flow_alert": normalize_flow_status(patient.current_drip_status) == "Slow Flow",
             "last_update_time": normalize_dt(patient.last_update_time).isoformat(),
         }
     )
@@ -703,6 +790,8 @@ def patient_payload(patient, readings=None):
         "current_flow_rate_ml_hr": round(patient.current_flow_rate_ml_hr or 0, 2),
         "current_flow_status": normalize_flow_status(patient.current_drip_status),
         "current_drip_status": normalize_flow_status(patient.current_drip_status),
+        "blockage_alert": normalize_flow_status(patient.current_drip_status) == "Blockage",
+        "slow_flow_alert": normalize_flow_status(patient.current_drip_status) == "Slow Flow",
         "last_update_time": format_time(patient.last_update_time),
         "last_update_full": format_dt(patient.last_update_time, "%d/%m/%Y, %I:%M:%S %p"),
         "full_weight_g": round(full_weight, 2),
@@ -722,6 +811,8 @@ def patient_payload(patient, readings=None):
                 "flow_rate_ml_hr": round(max(r.flow_rate_ml_hr or 0, 0), 2),
                 "flow_status": normalize_flow_status(r.drip_status),
                 "drip_status": normalize_flow_status(r.drip_status),
+                "blockage_alert": normalize_flow_status(r.drip_status) == "Blockage",
+                "slow_flow_alert": normalize_flow_status(r.drip_status) == "Slow Flow",
                 "source": r.source or "system",
             }
             for r in readings
@@ -908,15 +999,35 @@ def clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source="system")
     return round(weight, 2)
 
 
-def save_reading(patient, weight_g, drops_per_min=0.0, drop_count=0, drip_status=None, source="system"):
+def save_reading(
+    patient,
+    weight_g,
+    drops_per_min=0.0,
+    drop_count=0,
+    drip_status=None,
+    source="system",
+    incoming_flow_status=None,
+    incoming_flow_rate_ml_hr=None,
+):
     now = utcnow()
     patient.full_weight_g = IV_CAPACITY_ML
     patient.empty_weight_g = 0.0
     weight_g = clean_incoming_weight(patient, weight_g, drops_per_min=0.0, source=source)
     level = calculate_level(weight_g, patient.empty_weight_g, patient.full_weight_g)
     status = get_status(level)
-    flow_rate_ml_hr, flow_status, flow_message = analyze_load_cell_flow(patient, weight_g, now=now)
-    flow_status = normalize_flow_status(flow_status)
+
+    if incoming_flow_status:
+        flow_status = normalize_flow_status(incoming_flow_status)
+        flow_message = flow_message_for_status(flow_status)
+        if incoming_flow_rate_ml_hr is not None:
+            flow_rate_ml_hr = round(max(0.0, float(incoming_flow_rate_ml_hr)), 2)
+        elif flow_status in {"Blockage", "No Flow", "Bag Empty"}:
+            flow_rate_ml_hr = 0.0
+        else:
+            flow_rate_ml_hr, _, _ = analyze_load_cell_flow(patient, weight_g, now=now)
+    else:
+        flow_rate_ml_hr, flow_status, flow_message = analyze_load_cell_flow(patient, weight_g, now=now)
+        flow_status = normalize_flow_status(flow_status)
 
     patient.current_weight_g = round(weight_g, 2)
     patient.current_level_percent = level

@@ -407,6 +407,7 @@
 
     function flowStatusKey(status) {
         const s = String(status || '').toLowerCase();
+        if (s.includes('blockage') || s.includes('blocked') || s.includes('occlusion') || s.includes('clamp closed')) return 'blockage';
         if (s.includes('no flow')) return 'noFlow';
         if (s.includes('slow')) return 'slowFlow';
         if (s.includes('fast')) return 'fastFlow';
@@ -420,7 +421,7 @@
 
     function flowSeverity(status) {
         const key = flowStatusKey(status);
-        if (['noFlow', 'suddenDrop', 'bagEmpty'].includes(key)) return 'Critical';
+        if (['blockage', 'noFlow', 'suddenDrop', 'bagEmpty'].includes(key)) return 'Critical';
         if (['slowFlow', 'fastFlow', 'unstableWeight'].includes(key)) return 'Low';
         return 'Normal';
     }
@@ -708,17 +709,21 @@
 
     function isFlowAlertType(type) {
         const k = flowStatusKey(type);
-        return ['noFlow','slowFlow','fastFlow','suddenDrop','unstableWeight'].includes(k);
+        return ['blockage','noFlow','slowFlow','fastFlow','suddenDrop','unstableWeight'].includes(k);
     }
 
     function alertVoiceMessage(a) {
         const name = displayPatientName(a.patient_name, a.patient_id) || `${t('patient', 'Patient')} ${a.patient_id || ''}`;
         if (lang() === 'ms') {
+            if (flowStatusKey(a.alert_type) === 'blockage') return `Perhatian. ${name} menunjukkan kemungkinan sumbatan atau aliran IV terhenti. Sila periksa valve dan tiub pesakit.`;
+            if (flowStatusKey(a.alert_type) === 'slowFlow') return `Perhatian. ${name} menunjukkan aliran IV perlahan. Sila periksa roller clamp dan tiub pesakit.`;
             if (isFlowAlertType(a.alert_type)) return `Perhatian. ${name} ada masalah pada aliran IV. Sila periksa pesakit.`;
             if (normStatus(a.alert_type) === 'Critical') return `Perhatian. ${name} berada pada tahap kritikal. Sila periksa pesakit dengan segera.`;
             if (normStatus(a.alert_type) === 'Low') return `Perhatian. Tahap IV ${name} rendah. Sila pantau pesakit.`;
             return `Perhatian. ${name} memerlukan pemeriksaan.`;
         }
+        if (flowStatusKey(a.alert_type) === 'blockage') return `Attention. ${name} shows possible blockage or stopped IV flow. Please check the valve and IV line.`;
+        if (flowStatusKey(a.alert_type) === 'slowFlow') return `Attention. ${name} shows slow IV flow. Please check the roller clamp and IV line.`;
         if (isFlowAlertType(a.alert_type)) return `Attention. ${name} has a possible IV flow problem. Please check the patient.`;
         if (normStatus(a.alert_type) === 'Critical') return `Attention. ${name} is at critical IV level. Please check the patient immediately.`;
         if (normStatus(a.alert_type) === 'Low') return `Attention. ${name} IV level is low. Please monitor the patient.`;
@@ -747,6 +752,8 @@
     }
 
     function alertDesc(a) {
+        if (flowStatusKey(a.alert_type) === 'blockage') return t('blockageMessage', 'Possible blockage or clamp closed. Please check the IV line and patient.');
+        if (flowStatusKey(a.alert_type) === 'slowFlow') return t('slowFlowMessage', 'Slow IV flow detected. Please check the roller clamp and IV line.');
         if (isFlowAlertType(a.alert_type)) return t('flowProblemMessage', 'Abnormal load-cell weight trend detected. Please check the IV line and patient.');
         const s = normStatus(a.alert_type);
         if (s === 'Critical') return t('criticalMessage', 'IV level is critical. Immediate action required.');
@@ -1023,7 +1030,7 @@
         ['pointerdown', 'click', 'touchstart', 'keydown'].forEach(evt => document.addEventListener(evt, unlockAudioAndPreview, { once: true }));
         if (window.INITIAL_DASHBOARD_DATA) {
             updateDashboard(window.INITIAL_DASHBOARD_DATA);
-            setInterval(() => refresh(false), 2000);
+            setInterval(() => refresh(false), 1000);
         }
     });
 })();
